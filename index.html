@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor SGI</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23FF5A0A'/%3E%3Cpath d='M16 40l10-12 10 8 12-16' fill='none' stroke='%23ffffff' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='48' cy='20' r='4' fill='%23ffffff'/%3E%3C/svg%3E" />
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- SheetJS (XLSX) para exportar a Excel -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#FFF5F0',
+              100: '#FFE6D9',
+              200: '#FFCBB3',
+              500: '#FF5A0A',
+              600: '#E54D00',
+              700: '#BF3E00',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Estilos de barra de desplazamiento sutiles */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f8fafc;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    /* Animación suave para elementos nuevos */
+    @keyframes fadeInSlide {
+      from {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    .animate-fade-in {
+      animation: fadeInSlide 0.25s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Barra Superior -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30">
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center text-white shadow-sm shadow-brand-500/20">
+          <i data-lucide="layers" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold text-slate-900 tracking-tight">Monitor de Órdenes SGI</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-50 text-brand-500 border border-brand-200">
+              Comparador por Nº
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">Pegado inteligente, detección de registros nuevos y consolidación automática</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <span id="lastSavedBadge" class="hidden md:inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          Guardado automático activo
+        </span>
+
+        <button onclick="exportToExcel()" class="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition shadow-xs">
+          <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
+          <span class="hidden sm:inline">Exportar Excel</span>
+        </button>
+
+        <button onclick="requestClearBase()" class="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-medium text-rose-600 bg-rose-50/70 border border-rose-200/80 rounded-xl hover:bg-rose-100/80 transition">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Limpiar Base</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notificación Toast Flotante -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Contenedor Principal -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Tarjetas KPI -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Total en Base</p>
+          <p id="kpiTotal" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</p>
+          <p class="text-xs text-slate-400 mt-1">Órdenes consolidadas</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-brand-50 text-brand-500 flex items-center justify-center">
+          <i data-lucide="database" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Última Incorporación</p>
+          <p id="kpiLastAdded" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1">+0</p>
+          <p id="kpiLastTime" class="text-xs text-slate-400 mt-1">Sin cargas recientes</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <i data-lucide="sparkles" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Agendadas</p>
+          <p id="kpiAgendadas" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</p>
+          <p class="text-xs text-slate-400 mt-1">En estado Agendada</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+          <i data-lucide="calendar-check" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500 uppercase tracking-wider">Cuadrillas Activas</p>
+          <p id="kpiCuadrillas" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</p>
+          <p class="text-xs text-slate-400 mt-1">Técnicos asignados</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+          <i data-lucide="users" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </section>
+
+    <!-- Área de Pegado y Procesamiento -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5">
+          <span class="w-7 h-7 rounded-lg bg-brand-500 text-white text-xs font-bold flex items-center justify-center">1</span>
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-slate-900">Pegar Información del Sistema</h2>
+            <p class="text-xs text-slate-500">Copia directamente desde la tabla web (Ctrl+C) y pega aquí abajo (Ctrl+V)</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="inline-flex items-center gap-2 text-xs font-medium text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 cursor-pointer select-none hover:bg-slate-50">
+            <input type="checkbox" id="autoProcessToggle" checked class="rounded text-brand-500 focus:ring-brand-500 accent-[#FF5A0A]" />
+            Procesar al pegar
+          </label>
+
+          <button type="button" onclick="loadSampleInitial()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition">
+            <i data-lucide="clipboard-list" class="w-3.5 h-3.5 text-brand-500"></i>
+            Cargar Ejemplo (5 órd.)
+          </button>
+
+          <button type="button" onclick="loadSampleSecondPaste()" class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-600 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition" title="Simula pegar los mismos registros más 2 órdenes nuevas">
+            <i data-lucide="git-compare" class="w-3.5 h-3.5"></i>
+            Simular 2do Pegado (+2 nuevas)
+          </button>
+        </div>
+      </div>
+
+      <div class="p-5 space-y-4">
+        <div class="relative">
+          <textarea
+            id="pasteInput"
+            rows="5"
+            placeholder="Pega aquí la tabla copiada del sistema (Ctrl + V)... Ejemplo: inicia con encabezados Nº, Cod Seguimiento Cliente, Número Documento... seguido de los registros."
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/50 focus:bg-white p-3.5 text-xs sm:text-sm font-mono text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 transition"
+          ></textarea>
+          <button
+            type="button"
+            onclick="clearTextarea()"
+            id="clearInputBtn"
+            class="hidden absolute top-2.5 right-2.5 px-2.5 py-1 text-xs font-medium text-slate-500 bg-white/90 hover:text-slate-800 border border-slate-200 rounded-lg shadow-2xs"
+          >
+            Borrar texto
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <i data-lucide="info" class="w-4 h-4 text-brand-500 shrink-0"></i>
+            <span>La comparación se realiza automáticamente usando la primera columna <strong>Nº</strong> como identificador único.</span>
+          </div>
+
+          <div class="flex items-center gap-2.5 ml-auto">
+            <button
+              type="button"
+              onclick="processPastedData()"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 active:scale-[0.99] text-white font-semibold text-sm shadow-sm shadow-brand-500/25 transition cursor-pointer"
+            >
+              <i data-lucide="scan-search" class="w-4 h-4"></i>
+              Procesar y Comparar
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel de Resultados de Comparación (Staging Area - Solo visible cuando hay pegado posterior con comparación) -->
+    <section id="comparisonSection" class="hidden animate-fade-in bg-white rounded-2xl border-2 border-brand-500 shadow-md overflow-hidden">
+      <div class="px-5 py-4 bg-brand-50 border-b border-brand-200 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0">
+            <i data-lucide="git-pull-request" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-base font-bold text-slate-900">Resultado de Comparación por Nº</h3>
+              <span id="compNewBadge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-600 text-white">
+                +0 Nuevos
+              </span>
+              <span id="compExistingBadge" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
+                0 Existentes omitidos
+              </span>
+            </div>
+            <p id="compSummaryText" class="text-xs text-slate-600 mt-0.5">
+              Se analizaron los registros pegados frente a tu base actual.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onclick="dismissComparison()"
+            class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium text-slate-600 bg-white border border-slate-300 hover:bg-slate-50 transition"
+          >
+            Descartar
+          </button>
+
+          <button
+            id="btnMergeNew"
+            type="button"
+            onclick="mergeNewRecordsToMaster()"
+            class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs sm:text-sm shadow-sm shadow-brand-500/30 transition cursor-pointer"
+          >
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span id="btnMergeNewLabel">Agregar 0 Registros Nuevos a la Base Principal</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Contenido de los nuevos detectados -->
+      <div id="compNewContainer" class="p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Registros Nuevos Listos para Incorporar
+          </h4>
+          <button
+            type="button"
+            onclick="copyNewOrderNumbers()"
+            class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-brand-600 bg-slate-100 hover:bg-brand-50 px-2.5 py-1 rounded-lg transition"
+          >
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            Copiar lista de Nº nuevos
+          </button>
+        </div>
+
+        <div class="overflow-x-auto border border-emerald-200 rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-emerald-50/80 text-emerald-900 border-b border-emerald-200 font-semibold">
+                <th class="py-2.5 px-3 whitespace-nowrap">Estado</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Nº Orden</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Cod. Seguimiento</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Documento</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Cliente</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Cuadrilla</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Fecha Visita</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Distrito / Localidad</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Móvil</th>
+                <th class="py-2.5 px-3 whitespace-nowrap">Paquete / Suscripción</th>
+              </tr>
+            </thead>
+            <tbody id="compNewTableBody" class="divide-y divide-emerald-100 bg-white">
+              <!-- Filas nuevas dinámicas -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Mensaje si 0 registros nuevos -->
+      <div id="compNoNewContainer" class="hidden p-8 text-center">
+        <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto mb-3">
+          <i data-lucide="check-circle-2" class="w-6 h-6 text-emerald-500"></i>
+        </div>
+        <div class="overflow-x-auto border border-emerald-200 rounded-xl max-h-[380px]">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead class="sticky top-0 z-20">
+              <tr id="compNewTableHead" class="bg-emerald-50 text-emerald-950 border-b border-emerald-200 font-semibold">
+                <!-- 41 encabezados generados dinámicamente -->
+              </tr>
+            </thead>
+            <tbody id="compNewTableBody" class="divide-y divide-emerald-100 bg-white">
+              <!-- Filas nuevas dinámicas con las 41 columnas -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Mensaje si 0 registros nuevos -->
+      <div id="compNoNewContainer" class="hidden p-8 text-center">
+        <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center mx-auto mb-3">
+          <i data-lucide="check-circle-2" class="w-6 h-6 text-emerald-500"></i>
+        </div>
+        <h4 class="text-sm font-bold text-slate-800">No se encontraron registros nuevos</h4>
+        <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+          Todos los números de orden (<code class="bg-slate-100 px-1 rounded">Nº</code>) pegados en esta consulta ya se encuentran registrados en tu Base Principal.
+        </p>
+      </div>
+
+      <!-- Acordeón opcional para ver los registros existentes omitidos -->
+      <div id="compOmittedFooter" class="px-5 py-3 bg-slate-50 border-t border-slate-200">
+        <button
+          type="button"
+          onclick="toggleOmittedList()"
+          class="inline-flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-900"
+        >
+          <i id="omittedChevron" data-lucide="chevron-right" class="w-4 h-4 transition-transform"></i>
+          <span id="omittedToggleText">Ver los 0 registros existentes que fueron omitidos</span>
+        </button>
+
+        <div id="omittedListContainer" class="hidden mt-3 pt-3 border-t border-slate-200">
+          <div id="omittedPills" class="flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabla Principal (Base Consolidada) -->
+    <section class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+      <!-- Barra de Herramientas y Filtros -->
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div class="flex items-center gap-2.5">
+          <span class="w-7 h-7 rounded-lg bg-slate-800 text-white text-xs font-bold flex items-center justify-center">2</span>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm sm:text-base font-bold text-slate-900">Tabla Principal (Base Consolidada - 41 Columnas)</h2>
+              <span id="tableCountBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                0 registros
+              </span>
+            </div>
+            <p class="text-xs text-slate-500">Desliza horizontalmente para ver las 41 columnas exactas o haz clic en una fila para ver la ficha completa</p>
+          </div>
+        </div>
+
+        <!-- Buscador y Selectores -->
+        <div class="flex flex-wrap items-center gap-2.5">
+          <div class="relative flex-1 sm:flex-initial sm:w-64">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input
+              type="text"
+              id="searchInput"
+              oninput="renderMasterTable()"
+              placeholder="Buscar Nº, cliente, DNI, dirección..."
+              class="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500 transition"
+            />
+          </div>
+
+          <select
+            id="filterCuadrilla"
+            onchange="renderMasterTable()"
+            class="px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-brand-500 max-w-[210px]"
+          >
+            <option value="">Todas las cuadrillas</option>
+          </select>
+
+          <select
+            id="filterEstado"
+            onchange="renderMasterTable()"
+            class="px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-200 bg-white text-slate-700 focus:outline-none focus:border-brand-500"
+          >
+            <option value="">Todos los estados</option>
+          </select>
+
+          <label class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 cursor-pointer select-none hover:bg-slate-100">
+            <input type="checkbox" id="filterOnlyRecent" onchange="renderMasterTable()" class="rounded accent-[#FF5A0A]" />
+            Solo recién agregados
+          </label>
+        </div>
+      </div>
+
+      <!-- Contenedor de Tabla con Scroll Horizontal -->
+      <div class="overflow-x-auto relative max-h-[650px]">
+        <table class="w-full text-left border-collapse text-xs sm:text-[13px]">
+          <thead class="bg-slate-100 text-slate-800 font-semibold border-b border-slate-200 sticky top-0 z-20">
+            <tr id="masterTableHead">
+              <!-- Los 41 encabezados exactos se inyectan aquí -->
+            </tr>
+          </thead>
+          <tbody id="masterTableBody" class="divide-y divide-slate-200 bg-white">
+            <!-- Filas renderizadas por JS con las 41 columnas exactas -->
+          </tbody>
+        </table>
+
+        <!-- Estado Vacío -->
+        <div id="emptyStateContainer" class="py-16 px-4 text-center">
+          <div class="w-14 h-14 rounded-2xl bg-brand-50 text-brand-500 flex items-center justify-center mx-auto mb-3">
+            <i data-lucide="table-properties" class="w-7 h-7"></i>
+          </div>
+          <h3 class="text-base font-bold text-slate-900">Aún no hay registros en la Base Principal</h3>
+          <p class="text-xs sm:text-sm text-slate-500 mt-1 max-w-md mx-auto">
+            Pega los datos copiados desde tu sistema en el cuadro superior o haz clic en <strong>"Cargar Ejemplo"</strong> para probar el funcionamiento.
+          </p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal / Drawer Lateral de Detalle Completo de Orden -->
+  <div id="detailModal" class="fixed inset-0 z-50 hidden">
+    <!-- Backdrop -->
+    <div onclick="closeDetailModal()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] transition-opacity"></div>
+
+    <!-- Panel Derecho -->
+    <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col z-10 animate-fade-in">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-brand-500">Orden Nº</span>
+            <h3 id="modalOrderNumber" class="text-xl font-extrabold text-slate-900">---</h3>
+            <span id="modalOrderStatus" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800">---</span>
+          </div>
+          <p id="modalOrderClient" class="text-xs text-slate-500 mt-0.5">---</p>
+        </div>
+        <button onclick="closeDetailModal()" class="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="modalBody" class="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+        <!-- Contenido dinámico -->
+      </div>
+
+      <div class="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+        <span id="modalAddedMeta" class="text-xs text-slate-500"></span>
+        <button onclick="closeDetailModal()" class="px-4 py-2 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition">
+          Cerrar Detalle
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmación para Limpiar Base -->
+  <div id="confirmClearModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeClearModal()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 z-10 animate-fade-in">
+      <div class="w-11 h-11 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-lg font-bold text-slate-900">¿Limpiar toda la Base Principal?</h3>
+      <p class="text-xs sm:text-sm text-slate-600 mt-1.5">
+        Se eliminarán todos los registros guardados actualmente en este navegador. Esta acción no se puede deshacer.
+      </p>
+      <div class="mt-6 flex items-center justify-end gap-2.5">
+        <button onclick="closeClearModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Cancelar
+        </button>
+        <button onclick="confirmClearBase()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-semibold">
+          Sí, eliminar todo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // CONFIGURACIÓN Y ESTADO DE LA APLICACIÓN
+    // =========================================================================
+    const STORAGE_KEY = 'sgi_ordenes_base_v2';
+
+    let masterRecords = [];     // Lista principal acumulada
+    let pendingNewRecords = []; // Registros nuevos detectados en el último pegado
+    let pendingOmitted = [];    // Registros existentes omitidos en el último pegado
+    let lastBatchTime = null;   // Marca de tiempo de última incorporación
+
+    // Columnas oficiales exactas del sistema (41 columnas en orden estricto)
+    const EXPECTED_HEADERS = [
+      'Nº', 'Cod Seguimiento Cliente', 'Número Documento', 'Estado', 'Cuadrilla',
+      'Fecha Solicitud', 'País / Empresa', 'Cliente', 'Producto', 'Tipo Ubicación',
+      'Ubicación', 'Motivo Regestión', 'Sector Operativo', 'Tipo Orden', 'Tipo Trabajo',
+      'Motivo Trabajo', 'Localidad', 'Dirección', 'Código De Seguimiento', 'Fecha Visita',
+      'Región / Zona', 'Tipo Documento', 'Prioridad', 'Móvil', 'Fijo',
+      'Inicio de Visita', 'Fin de Visita', 'Motivo de Cancelación', 'Motivo de Finalización',
+      'Motivo de Anulación', 'Motivo de Suspensión', 'Georeferencia', 'Proveedeor',
+      'Id de Proyecto', 'Código Postal', 'Motivo', 'Datos Técnicos', 'Fecha Estado',
+      'Suscripción', 'Historial de Estados', 'Email'
+    ];
+
+    // =========================================================================
+    // INICIALIZACIÓN
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      renderTableHeaders();
+      loadFromStorage();
+      setupPasteListeners();
+      refreshAllUI();
+      lucide.createIcons();
+    });
+
+    function renderTableHeaders() {
+      // Encabezados para la tabla principal (41 columnas exactas + Ficha)
+      const masterHead = document.getElementById('masterTableHead');
+      masterHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
+        if (idx === 0) {
+          return `<th class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">${escapeHtml(header)}</th>`;
+        }
+        const minWidthClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+          ? 'min-w-[260px]'
+          : '';
+        return `<th class="py-3 px-3.5 whitespace-nowrap ${minWidthClass}">${escapeHtml(header)}</th>`;
+      }).join('') + `<th class="py-3 px-3.5 whitespace-nowrap text-right">Ficha</th>`;
+
+      // Encabezados para la tabla de comparación de nuevos (41 columnas exactas)
+      const compHead = document.getElementById('compNewTableHead');
+      compHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
+        if (idx === 0) {
+          return `<th class="py-2.5 px-3 whitespace-nowrap sticky left-0 z-30 bg-emerald-50 border-r border-emerald-200">${escapeHtml(header)}</th>`;
+        }
+        return `<th class="py-2.5 px-3 whitespace-nowrap">${escapeHtml(header)}</th>`;
+      }).join('');
+    }
+
+    function loadFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            masterRecords = parsed;
+          }
+        }
+      } catch (err) {
+        console.error('Error leyendo localStorage:', err);
+      }
+    }
+
+    function saveToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(masterRecords));
+      } catch (err) {
+        console.error('Error guardando en localStorage:', err);
+        showToast('No se pudo guardar en memoria local (límite excedido)', 'error');
+      }
+    }
+
+    function setupPasteListeners() {
+      const textarea = document.getElementById('pasteInput');
+      const clearBtn = document.getElementById('clearInputBtn');
+
+      textarea.addEventListener('input', () => {
+        clearBtn.classList.toggle('hidden', textarea.value.trim().length === 0);
+      });
+
+      textarea.addEventListener('paste', () => {
+        setTimeout(() => {
+          clearBtn.classList.toggle('hidden', textarea.value.trim().length === 0);
+          if (document.getElementById('autoProcessToggle').checked && textarea.value.trim()) {
+            processPastedData();
+          }
+        }, 60);
+      });
+    }
+
+    function clearTextarea() {
+      const textarea = document.getElementById('pasteInput');
+      textarea.value = '';
+      document.getElementById('clearInputBtn').classList.add('hidden');
+      textarea.focus();
+    }
+
+    // =========================================================================
+    // PARSER INTELIGENTE (MAPEO ESTRICTO A LAS 41 COLUMNAS)
+    // =========================================================================
+    function parseRawPastedText(rawText) {
+      if (!rawText || !rawText.trim()) return [];
+
+      // Normalizar saltos de línea
+      const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = normalized.split('\n');
+
+      // Detectar si es formato TSV tabular (ej. copiado desde Excel con 41 columnas)
+      const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+      const tsvDataLines = nonEmptyLines.filter(l => {
+        const parts = l.split('\t');
+        const firstNonEmpty = parts[0].trim() === '' ? (parts[1] || '').trim() : parts[0].trim();
+        return parts.length >= 10 && /^\d{5,10}$/.test(firstNonEmpty);
+      });
+
+      if (tsvDataLines.length > 0) {
+        return parseTsvFormat(nonEmptyLines);
+      }
+
+      // Caso principal: Formato bloque multi-línea copiado desde tabla HTML web SGI
+      return parseMultilineSgiFormat(lines);
+    }
+
+    // Parser A: Formato TSV (cada fila separada por tabuladores en una sola línea)
+    function parseTsvFormat(nonEmptyLines) {
+      let headers = EXPECTED_HEADERS;
+      const records = [];
+
+      for (const line of nonEmptyLines) {
+        const cells = line.split('\t').map(c => c.trim());
+        // Detectar fila de encabezados
+        if (cells.includes('Cod Seguimiento Cliente') || cells[0] === 'Nº' || (cells[0] === '' && cells[1] === 'Nº')) {
+          const cleanHeaders = cells[0] === '' ? cells.slice(1) : cells;
+          if (cleanHeaders.length >= 10) headers = cleanHeaders;
+          continue;
+        }
+
+        const offset = cells[0] === '' ? 1 : 0;
+        const firstVal = cells[offset];
+
+        if (firstVal && /^\d{5,10}$/.test(firstVal)) {
+          const obj = createEmptyRecord();
+          headers.forEach((h, idx) => {
+            const key = matchHeaderKey(h);
+            if (key && cells[idx + offset] !== undefined) {
+              obj[key] = cells[idx + offset];
+            }
+          });
+          obj['Nº'] = firstVal;
+          records.push(obj);
+        }
+      }
+      return records;
+    }
+
+    // Parser B: Formato Multi-línea copiado del portal web SGI / TECSYCOM
+    function parseMultilineSgiFormat(lines) {
+      // Filtrar línea inicial de encabezados si existe
+      const filteredLines = [];
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.includes('Cod Seguimiento Cliente') && trimmed.includes('Número Documento')) {
+          continue;
+        }
+        filteredLines.push(lines[i]);
+      }
+
+      // Encontrar índices donde inicia cada registro: línea con Nº de orden (6 a 9 dígitos) seguido de Cod Seguimiento y DNI
+      const startIndices = [];
+      for (let i = 0; i < filteredLines.length; i++) {
+        const val = filteredLines[i].trim();
+        if (/^\d{6,9}$/.test(val)) {
+          const next1 = (filteredLines[i + 1] || '').trim();
+          const next2 = (filteredLines[i + 2] || '').trim();
+          if (/^\d{5,10}$/.test(next1) && /^\d{6,12}$/.test(next2)) {
+            startIndices.push(i);
+          }
+        }
+      }
+
+      const records = [];
+
+      for (let s = 0; s < startIndices.length; s++) {
+        const start = startIndices[s];
+        const end = s + 1 < startIndices.length ? startIndices[s + 1] : filteredLines.length;
+        const block = filteredLines.slice(start, end).map(l => l.trim());
+
+        const rec = extractRecordFromBlock(block);
+        if (rec && rec['Nº']) {
+          records.push(rec);
+        }
+      }
+
+      return records;
+    }
+
+    function extractRecordFromBlock(block) {
+      const rec = createEmptyRecord();
+
+      // Limpiar líneas vacías al final del bloque
+      while (block.length > 0 && block[block.length - 1] === '') {
+        block.pop();
+      }
+
+      // 1-6: Campos fijos iniciales por posición exacta
+      rec['Nº'] = block[0] || '';
+      rec['Cod Seguimiento Cliente'] = block[1] || '';
+      rec['Número Documento'] = block[2] || '';
+      rec['Estado'] = block[3] || '';
+      rec['Cuadrilla'] = block[4] || '';
+      rec['Fecha Solicitud'] = block[5] || '';
+
+      // Analizar el resto del bloque desde índice 6 en adelante
+      const rest = block.slice(6);
+
+      // Localizar el índice donde aparece el Cliente (precedido usualmente por iniciales de 2-3 letras como JM, CP, EM)
+      let clientIdx = -1;
+      let initialsIdx = -1;
+
+      for (let i = 0; i < Math.min(rest.length, 8); i++) {
+        const line = rest[i];
+        if (!line) continue;
+        if (/^[A-ZÑÁÉÍÓÚ]{2,3}$/.test(line) && rest[i + 1] && rest[i + 1].length > 4) {
+          initialsIdx = i;
+          clientIdx = i + 1;
+          rec['Cliente'] = rest[i + 1];
+          break;
+        }
+        if (/^[A-ZÑÁÉÍÓÚ\s]{6,}$/.test(line) && line !== 'GESTIÓN PROVINCIA' && line !== 'GESTION PROVINCIA' && line !== 'PERÚ' && line !== 'PERU') {
+          clientIdx = i;
+          rec['Cliente'] = line;
+          break;
+        }
+      }
+
+      // 7: País / Empresa (líneas entre Fecha Solicitud y las iniciales/Cliente, ej: "Perú" y "GESTIÓN PROVINCIA")
+      const countryEnd = initialsIdx !== -1 ? initialsIdx : (clientIdx !== -1 ? clientIdx : 3);
+      const countryLines = rest.slice(0, countryEnd).filter(Boolean);
+      rec['País / Empresa'] = countryLines.join(' / ');
+
+      // Bloque posterior al Cliente
+      const afterClient = clientIdx !== -1 ? rest.slice(clientIdx + 1) : rest;
+
+      // 9-12: Producto, Tipo Ubicación, Ubicación, Motivo Regestión
+      // En el ejemplo del usuario:
+      // Multifamiliar -> Producto
+      // INTERNET FIBRA OPTICA SGI PROV -> Tipo Ubicación
+      // Domicilio -> Ubicación
+      // Domicilio Particular -> Motivo Regestión
+      const knownProducts = ['Multifamiliar', 'Unifamiliar', 'Condominio', 'Edificio', 'Comercial'];
+      const prodIdx = afterClient.findIndex(l => knownProducts.some(k => k.toLowerCase() === l.toLowerCase()));
+      if (prodIdx !== -1) {
+        rec['Producto'] = afterClient[prodIdx] || '';
+        if (afterClient[prodIdx + 1] && afterClient[prodIdx + 1].includes('INTERNET')) {
+          rec['Tipo Ubicación'] = afterClient[prodIdx + 1];
+        }
+        if (afterClient[prodIdx + 2] && ['Domicilio', 'Negocio', 'Empresa'].includes(afterClient[prodIdx + 2])) {
+          rec['Ubicación'] = afterClient[prodIdx + 2];
+        }
+        if (afterClient[prodIdx + 3] && afterClient[prodIdx + 3].startsWith('Domicilio')) {
+          rec['Motivo Regestión'] = afterClient[prodIdx + 3];
+        }
+      }
+
+      // Encontrar índices de anclas estructurales dentro de afterClient
+      const sectorIdx = afterClient.findIndex(l => /^[A-ZÑÁÉÍÓÚ\s]+-\s*[A-ZÑÁÉÍÓÚ0-9\s]+$/.test(l) && !l.includes('WN-') && !l.includes('OP-'));
+      if (sectorIdx !== -1) {
+        rec['Sector Operativo'] = afterClient[sectorIdx];
+        rec['Tipo Orden'] = afterClient[sectorIdx + 1] || '';
+        rec['Tipo Trabajo'] = afterClient[sectorIdx + 2] || '';
+        rec['Motivo Trabajo'] = afterClient[sectorIdx + 3] || '';
+      }
+
+      // Encontrar Dirección (contiene paréntesis de distrito/provincia o prefijo de vía)
+      const dirIdx = afterClient.findIndex(l =>
+        l.length > 18 &&
+        !l.startsWith('Fecha:') &&
+        !l.includes('COORDENADA') &&
+        !l.includes('Paquete:') &&
+        ((l.includes('(') && l.includes(')')) || /^(CALLE|AV|AVENIDA|JR|JIRON|PSJ|PASAJE|MZ|URB|CENTRO POBLADO|AA\.?HH|PUEBLO JOVEN|SECTOR)/i.test(l))
+      );
+
+      if (dirIdx !== -1) {
+        rec['Dirección'] = afterClient[dirIdx];
+
+        // 17: Localidad (líneas no vacías entre Motivo Trabajo y Dirección, ej: "CHICLAYO" y "LAMBAYEQUE")
+        const locStart = sectorIdx !== -1 ? sectorIdx + 4 : 0;
+        if (dirIdx > locStart) {
+          const locLines = afterClient.slice(locStart, dirIdx).filter(Boolean);
+          rec['Localidad'] = locLines.join(' / ');
+        }
+
+        // 19-20: Código De Seguimiento y Fecha Visita van inmediatamente después de Dirección
+        if (afterClient[dirIdx + 1] && /^\d{7,10}$/.test(afterClient[dirIdx + 1])) {
+          rec['Código De Seguimiento'] = afterClient[dirIdx + 1];
+        }
+        if (afterClient[dirIdx + 2] && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(afterClient[dirIdx + 2])) {
+          rec['Fecha Visita'] = afterClient[dirIdx + 2];
+        }
+      }
+
+      // Encontrar Tipo Documento (ej: "Cédula de identidad", "DNI", "RUC")
+      const docTypeIdx = afterClient.findIndex(l =>
+        l.includes('Cédula') || l === 'DNI' || l === 'RUC' || l === 'Carnet de Extranjería' || l === 'Pasaporte'
+      );
+
+      if (docTypeIdx !== -1) {
+        // 21: Región / Zona (líneas no vacías entre Fecha Visita y Tipo Documento, ej: "REGION ESTE 1 CHICLAYO" y "POMALCA")
+        const regionStart = dirIdx !== -1 ? dirIdx + 3 : 0;
+        if (docTypeIdx > regionStart) {
+          const regionLines = afterClient.slice(regionStart, docTypeIdx).filter(Boolean);
+          rec['Región / Zona'] = regionLines.join(' / ');
+        }
+
+        // 22-25: Tipo Documento, Prioridad, Móvil, Fijo
+        rec['Tipo Documento'] = afterClient[docTypeIdx] || '';
+        rec['Prioridad'] = afterClient[docTypeIdx + 1] || '';
+        rec['Móvil'] = afterClient[docTypeIdx + 2] || '';
+        rec['Fijo'] = afterClient[docTypeIdx + 3] || '';
+      }
+
+      // Encontrar Georeferencia (-lat,-lng)
+      const geoIdx = afterClient.findIndex(l => /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(l));
+      if (geoIdx !== -1) {
+        // 32-34: Georeferencia, Proveedeor, Id de Proyecto
+        rec['Georeferencia'] = afterClient[geoIdx] || '';
+        rec['Proveedeor'] = afterClient[geoIdx + 1] || '';
+        rec['Id de Proyecto'] = afterClient[geoIdx + 2] || '';
+      }
+
+      // Encontrar Datos Técnicos (COORDENADA CTO1...)
+      const techIdx = afterClient.findIndex(l => l.includes('COORDENADA CTO') || l.includes('CTO1/'));
+      if (techIdx !== -1) {
+        // 37: Datos Técnicos
+        rec['Datos Técnicos'] = afterClient[techIdx] || '';
+        // 38: Fecha Estado (siguiente línea si es fecha dd/mm/yyyy hh:mm)
+        if (afterClient[techIdx + 1] && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(afterClient[techIdx + 1])) {
+          rec['Fecha Estado'] = afterClient[techIdx + 1];
+        }
+      }
+
+      // 39: Suscripción
+      const subLine = afterClient.find(l => l.includes('Paquete:') || l.includes('Campaña :') || l.includes('SVA\'s:'));
+      if (subLine) {
+        rec['Suscripción'] = subLine;
+      }
+
+      // 40: Historial de Estados
+      const histIdx = afterClient.findIndex(l => l.startsWith('Fecha:') && l.includes('Estado:'));
+      if (histIdx !== -1) {
+        rec['Historial de Estados'] = afterClient[histIdx];
+        // 41: Email (o valor final de la fila si existe después del historial)
+        if (afterClient[histIdx + 1]) {
+          rec['Email'] = afterClient[histIdx + 1];
+        }
+      }
+
+      return rec;
+    }
+
+    function createEmptyRecord() {
+      const obj = {};
+      EXPECTED_HEADERS.forEach(h => obj[h] = '');
+      return obj;
+    }
+
+    function matchHeaderKey(rawHeader) {
+      const clean = rawHeader.trim().toLowerCase();
+      return EXPECTED_HEADERS.find(h => h.toLowerCase() === clean) || null;
+    }
+
+    // =========================================================================
+    // FLUJO PRINCIPAL DE PROCESAMIENTO Y COMPARACIÓN
+    // =========================================================================
+    function processPastedData() {
+      const textarea = document.getElementById('pasteInput');
+      const raw = textarea.value;
+
+      if (!raw.trim()) {
+        showToast('Por favor pega primero la información copiada del sistema.', 'warning');
+        textarea.focus();
+        return;
+      }
+
+      const parsed = parseRawPastedText(raw);
+
+      if (parsed.length === 0) {
+        showToast('No se detectaron registros válidos con número de orden (Nº). Verifica el texto pegado.', 'error');
+        return;
+      }
+
+      // Deduplicar dentro del mismo texto pegado por si copiaron filas repetidas
+      const uniqueIncomingMap = new Map();
+      for (const item of parsed) {
+        const id = String(item['Nº']).trim();
+        if (id && !uniqueIncomingMap.has(id)) {
+          uniqueIncomingMap.set(id, item);
+        }
+      }
+      const incomingRecords = Array.from(uniqueIncomingMap.values());
+
+      // ESCENARIO 1: Base Principal vacía -> Carga directa inicial
+      if (masterRecords.length === 0) {
+        const now = formatNow();
+        masterRecords = incomingRecords.map(r => ({
+          ...r,
+          _addedAt: now,
+          _isRecent: true
+        }));
+        lastBatchTime = now;
+
+        saveToStorage();
+        clearTextarea();
+        dismissComparison();
+        refreshAllUI(incomingRecords.length);
+        showToast(`¡Listo! Se cargaron ${incomingRecords.length} registros iniciales en la Base Principal.`, 'success');
+        return;
+      }
+
+      // ESCENARIO 2: Ya existen registros -> Comparar por primera columna "Nº"
+      const existingIds = new Set(masterRecords.map(r => String(r['Nº']).trim()));
+
+      const newOnes = [];
+      const existingOnes = [];
+
+      for (const rec of incomingRecords) {
+        const id = String(rec['Nº']).trim();
+        if (existingIds.has(id)) {
+          existingOnes.push(rec);
+        } else {
+          newOnes.push(rec);
+        }
+      }
+
+      pendingNewRecords = newOnes;
+      pendingOmitted = existingOnes;
+
+      renderComparisonPanel();
+      lucide.createIcons();
+
+      // Desplazar suavemente hacia el panel de comparación
+      document.getElementById('comparisonSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function renderComparisonPanel() {
+      const section = document.getElementById('comparisonSection');
+      section.classList.remove('hidden');
+
+      const newCount = pendingNewRecords.length;
+      const omittedCount = pendingOmitted.length;
+
+      document.getElementById('compNewBadge').textContent = `+${newCount} Nuevo${newCount === 1 ? '' : 's'}`;
+      document.getElementById('compExistingBadge').textContent = `${omittedCount} Existente${omittedCount === 1 ? '' : 's'} omitido${omittedCount === 1 ? '' : 's'}`;
+      document.getElementById('compSummaryText').textContent =
+        `Se analizaron ${newCount + omittedCount} registros pegados: ${newCount} no estaban en tu base y ${omittedCount} ya existían (omitidos).`;
+
+      const mergeBtn = document.getElementById('btnMergeNew');
+      const mergeLabel = document.getElementById('btnMergeNewLabel');
+      const newContainer = document.getElementById('compNewContainer');
+      const noNewContainer = document.getElementById('compNoNewContainer');
+
+      if (newCount > 0) {
+        mergeBtn.classList.remove('hidden');
+        mergeLabel.textContent = `Agregar ${newCount} Registro${newCount === 1 ? '' : 's'} Nuevo${newCount === 1 ? '' : 's'} a la Base Principal`;
+        newContainer.classList.remove('hidden');
+        noNewContainer.classList.add('hidden');
+      } else {
+        mergeBtn.classList.add('hidden');
+        newContainer.classList.add('hidden');
+        noNewContainer.classList.remove('hidden');
+      }
+
+      // Renderizar tabla preliminar de nuevos mostrando TODAS las 41 columnas
+      const tbody = document.getElementById('compNewTableBody');
+      tbody.innerHTML = pendingNewRecords.map(rec => {
+        const cellsHtml = EXPECTED_HEADERS.map((header, idx) => {
+          const val = rec[header] || '';
+          if (idx === 0) {
+            return `
+              <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white border-r border-emerald-200">
+                <div class="flex items-center gap-1.5">
+                  <span>${escapeHtml(val)}</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800">NUEVO</span>
+                </div>
+              </td>
+            `;
+          }
+          if (header === 'Estado') {
+            return `<td class="py-2.5 px-3 whitespace-nowrap">${renderStatusBadge(val)}</td>`;
+          }
+          if (header === 'Prioridad') {
+            return `<td class="py-2.5 px-3 whitespace-nowrap">${renderPriorityBadge(val)}</td>`;
+          }
+          const wrapClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+            ? 'max-w-[280px] truncate'
+            : 'whitespace-nowrap';
+          return `<td class="py-2.5 px-3 text-slate-700 ${wrapClass}" title="${escapeHtml(val)}">${escapeHtml(val)}</td>`;
+        }).join('');
+
+        return `<tr class="hover:bg-emerald-50/40 transition">${cellsHtml}</tr>`;
+      }).join('');
+
+      // Configurar pie de omitidos
+      const omittedFooter = document.getElementById('compOmittedFooter');
+      if (omittedCount > 0) {
+        omittedFooter.classList.remove('hidden');
+        document.getElementById('omittedToggleText').textContent =
+          `Ver los ${omittedCount} registro${omittedCount === 1 ? '' : 's'} existente${omittedCount === 1 ? '' : 's'} que fueron omitidos`;
+        document.getElementById('omittedPills').innerHTML = pendingOmitted.map(r => `
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs text-slate-600">
+            <strong class="text-slate-800">${escapeHtml(r['Nº'])}</strong>
+            <span class="text-slate-400">•</span>
+            <span class="truncate max-w-[160px]">${escapeHtml(r['Cliente'] || 'Sin nombre')}</span>
+          </span>
+        `).join('');
+      } else {
+        omittedFooter.classList.add('hidden');
+      }
+      document.getElementById('omittedListContainer').classList.add('hidden');
+      document.getElementById('omittedChevron').style.transform = 'rotate(0deg)';
+    }
+
+    function toggleOmittedList() {
+      const container = document.getElementById('omittedListContainer');
+      const chevron = document.getElementById('omittedChevron');
+      const isHidden = container.classList.contains('hidden');
+      container.classList.toggle('hidden');
+      chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+
+    function mergeNewRecordsToMaster() {
+      if (pendingNewRecords.length === 0) return;
+
+      const now = formatNow();
+      const addedCount = pendingNewRecords.length;
+
+      // Quitar marca de "recién agregado" a lotes anteriores para destacar claramente el lote actual
+      masterRecords = masterRecords.map(r => ({ ...r, _isRecent: false }));
+
+      // Preparar nuevos registros con etiqueta de recién agregado
+      const formattedNew = pendingNewRecords.map(r => ({
+        ...r,
+        _addedAt: now,
+        _isRecent: true
+      }));
+
+      // Insertar los nuevos al inicio de la tabla principal para visibilidad inmediata
+      masterRecords = [...formattedNew, ...masterRecords];
+      lastBatchTime = now;
+
+      saveToStorage();
+      clearTextarea();
+      dismissComparison();
+      refreshAllUI(addedCount);
+
+      showToast(`¡${addedCount} registro${addedCount === 1 ? '' : 's'} nuevo${addedCount === 1 ? '' : 's'} agregado${addedCount === 1 ? '' : 's'} a la Base Principal!`, 'success');
+    }
+
+    function dismissComparison() {
+      pendingNewRecords = [];
+      pendingOmitted = [];
+      document.getElementById('comparisonSection').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // RENDERIZADO DE TABLA PRINCIPAL Y KPIs
+    // =========================================================================
+    function refreshAllUI(lastAddedCount = null) {
+      updateKPIs(lastAddedCount);
+      populateFilterDropdowns();
+      renderMasterTable();
+    }
+
+    function updateKPIs(lastAddedCount) {
+      document.getElementById('kpiTotal').textContent = masterRecords.length;
+
+      if (lastAddedCount !== null) {
+        document.getElementById('kpiLastAdded').textContent = `+${lastAddedCount}`;
+        document.getElementById('kpiLastTime').textContent = lastBatchTime ? `Agregado ${lastBatchTime}` : 'Recién actualizado';
+      } else {
+        const recentCount = masterRecords.filter(r => r._isRecent).length;
+        document.getElementById('kpiLastAdded').textContent = `+${recentCount}`;
+        if (masterRecords.length > 0 && masterRecords[0]._addedAt) {
+          document.getElementById('kpiLastTime').textContent = `Última carga: ${masterRecords[0]._addedAt}`;
+        }
+      }
+
+      const agendadas = masterRecords.filter(r => (r['Estado'] || '').toLowerCase() === 'agendada').length;
+      document.getElementById('kpiAgendadas').textContent = agendadas;
+
+      const cuadrillas = new Set(masterRecords.map(r => r['Cuadrilla']).filter(Boolean));
+      document.getElementById('kpiCuadrillas').textContent = cuadrillas.size;
+    }
+
+    function populateFilterDropdowns() {
+      const cuadrillaSelect = document.getElementById('filterCuadrilla');
+      const estadoSelect = document.getElementById('filterEstado');
+
+      const prevCuadrilla = cuadrillaSelect.value;
+      const prevEstado = estadoSelect.value;
+
+      const cuadrillas = Array.from(new Set(masterRecords.map(r => r['Cuadrilla']).filter(Boolean))).sort();
+      const estados = Array.from(new Set(masterRecords.map(r => r['Estado']).filter(Boolean))).sort();
+
+      cuadrillaSelect.innerHTML = '<option value="">Todas las cuadrillas</option>' +
+        cuadrillas.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+
+      estadoSelect.innerHTML = '<option value="">Todos los estados</option>' +
+        estados.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('');
+
+      if (cuadrillas.includes(prevCuadrilla)) cuadrillaSelect.value = prevCuadrilla;
+      if (estados.includes(prevEstado)) estadoSelect.value = prevEstado;
+    }
+
+    function renderMasterTable() {
+      const tbody = document.getElementById('masterTableBody');
+      const emptyState = document.getElementById('emptyStateContainer');
+      const countBadge = document.getElementById('tableCountBadge');
+
+      const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+      const selectedCuadrilla = document.getElementById('filterCuadrilla').value;
+      const selectedEstado = document.getElementById('filterEstado').value;
+      const onlyRecent = document.getElementById('filterOnlyRecent').checked;
+
+      const filtered = masterRecords.filter(rec => {
+        if (selectedCuadrilla && rec['Cuadrilla'] !== selectedCuadrilla) return false;
+        if (selectedEstado && rec['Estado'] !== selectedEstado) return false;
+        if (onlyRecent && !rec._isRecent) return false;
+
+        if (searchTerm) {
+          const haystack = [
+            rec['Nº'],
+            rec['Cod Seguimiento Cliente'],
+            rec['Número Documento'],
+            rec['Cliente'],
+            rec['Cuadrilla'],
+            rec['Dirección'],
+            rec['Localidad'],
+            rec['Sector Operativo'],
+            rec['Móvil'],
+            rec['Suscripción']
+          ].join(' ').toLowerCase();
+          if (!haystack.includes(searchTerm)) return false;
+        }
+        return true;
+      });
+
+      countBadge.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
+
+      if (masterRecords.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${EXPECTED_HEADERS.length + 1}" class="py-10 text-center text-slate-500 text-sm">
+              No se encontraron órdenes que coincidan con los filtros aplicados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(rec => {
+        const isRecent = Boolean(rec._isRecent);
+        const rowBg = isRecent ? 'bg-brand-50/45 hover:bg-brand-50/80' : 'bg-white hover:bg-slate-50';
+        const stickyBg = isRecent ? 'bg-[#FFF8F4]' : 'bg-white';
+
+        const cellsHtml = EXPECTED_HEADERS.map((header, idx) => {
+          const val = rec[header] || '';
+
+          if (idx === 0) {
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold text-slate-900">${escapeHtml(val)}</span>
+                  ${isRecent ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">NUEVO</span>` : ''}
+                </div>
+              </td>
+            `;
+          }
+
+          if (header === 'Estado') {
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}</td>`;
+          }
+
+          if (header === 'Prioridad') {
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderPriorityBadge(val)}</td>`;
+          }
+
+          if (header === 'Georeferencia' && val) {
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap text-xs">
+                <a href="https://www.google.com/maps?q=${encodeURIComponent(val)}" target="_blank" onclick="event.stopPropagation()" class="inline-flex items-center gap-1 text-brand-600 hover:underline font-mono font-medium" title="Abrir en Google Maps">
+                  <i data-lucide="map-pin" class="w-3.5 h-3.5 shrink-0"></i>
+                  ${escapeHtml(val)}
+                </a>
+              </td>
+            `;
+          }
+
+          if (header === 'Cliente') {
+            return `<td class="py-3 px-3.5 whitespace-nowrap font-semibold text-slate-900">${escapeHtml(val)}</td>`;
+          }
+
+          const wrapClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+            ? 'max-w-[300px] truncate'
+            : 'whitespace-nowrap';
+
+          return `<td class="py-3 px-3.5 text-slate-700 ${wrapClass}" title="${escapeHtml(val)}">${escapeHtml(val)}</td>`;
+        }).join('');
+
+        return `
+          <tr onclick="openDetailModal('${escapeHtml(rec['Nº'])}')" class="${rowBg} transition cursor-pointer group">
+            ${cellsHtml}
+            <td class="py-3 px-3.5 whitespace-nowrap text-right">
+              <button type="button" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 group-hover:bg-brand-500 group-hover:text-white transition">
+                Ver ficha
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function renderStatusBadge(status) {
+      const s = (status || '').trim();
+      const lower = s.toLowerCase();
+      if (lower === 'iniciada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-400 text-slate-950 border border-amber-500 shadow-xs"><span class="w-2 h-2 rounded-full bg-slate-950 animate-pulse"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower === 'agendada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200"><span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower === 'finalizada' || lower === 'completada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower === 'pendiente' || lower === 'asignada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower.includes('cancel') || lower.includes('anulad')) {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>${escapeHtml(s)}</span>`;
+      }
+      return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">${escapeHtml(s || '-')}</span>`;
+    }
+
+    function renderPriorityBadge(priority) {
+      const p = (priority || '').trim();
+      const lower = p.toLowerCase();
+      if (lower === 'alta' || lower === 'urgente') {
+        return `<span class="px-2 py-0.5 rounded-md text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">${escapeHtml(p)}</span>`;
+      }
+      if (lower === 'media') {
+        return `<span class="px-2 py-0.5 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">${escapeHtml(p)}</span>`;
+      }
+      if (lower === 'baja') {
+        return `<span class="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">${escapeHtml(p)}</span>`;
+      }
+      return `<span class="text-slate-400 text-xs">${escapeHtml(p || '-')}</span>`;
+    }
+
+    function extractPackageSummary(subText) {
+      if (!subText) return '-';
+      const match = subText.match(/Paquete:\s*([^|]+)/i);
+      if (match) return match[1].trim();
+      return subText;
+    }
+
+    // =========================================================================
+    // MODAL DE DETALLE COMPLETO
+    // =========================================================================
+    function openDetailModal(orderNumber) {
+      const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
+      if (!rec) return;
+
+      document.getElementById('modalOrderNumber').textContent = rec['Nº'];
+      document.getElementById('modalOrderStatus').textContent = rec['Estado'] || 'Sin estado';
+      document.getElementById('modalOrderClient').textContent = `${rec['Cliente'] || 'Cliente'} • DNI/Doc: ${rec['Número Documento'] || '-'}`;
+      document.getElementById('modalAddedMeta').textContent = rec._addedAt ? `Incorporado a la base: ${rec._addedAt}` : '';
+
+      // Formatear historial de estados por líneas
+      const historyItems = (rec['Historial de Estados'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      // Formatear suscripción por ítems
+      const subItems = (rec['Suscripción'] || '')
+        .split('|')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      // Formatear datos técnicos por ítems
+      const techItems = (rec['Datos Técnicos'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const modalBody = document.getElementById('modalBody');
+      modalBody.innerHTML = `
+        <!-- Bloque 1: Agendamiento y Cuadrilla -->
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1.5">
+            <i data-lucide="truck" class="w-4 h-4"></i> Asignación y Agenda
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Cuadrilla Asignada</span><strong class="text-slate-900">${escapeHtml(rec['Cuadrilla'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Visita</span><strong class="text-slate-900">${escapeHtml(rec['Fecha Visita'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Solicitud</span><span class="text-slate-800">${escapeHtml(rec['Fecha Solicitud'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Prioridad / Tipo Trabajo</span><span class="text-slate-800">${escapeHtml(rec['Prioridad'] || '-')} • ${escapeHtml(rec['Tipo Trabajo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Cod. Seguimiento Cliente</span><span class="font-mono text-slate-800">${escapeHtml(rec['Cod Seguimiento Cliente'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Código De Seguimiento</span><span class="font-mono text-slate-800">${escapeHtml(rec['Código De Seguimiento'] || '-')}</span></div>
+          </div>
+        </div>
+
+        <!-- Bloque 2: Contacto y Ubicación -->
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="map-pin" class="w-4 h-4 text-brand-500"></i> Ubicación y Contacto
+            </h4>
+            ${rec['Georeferencia'] ? `
+              <a href="https://www.google.com/maps?q=${encodeURIComponent(rec['Georeferencia'])}" target="_blank" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
+                Abrir en Google Maps <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              </a>
+            ` : ''}
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Teléfono Móvil</span><strong class="text-slate-900 font-mono">${escapeHtml(rec['Móvil'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Teléfono Fijo</span><span class="text-slate-800 font-mono">${escapeHtml(rec['Fijo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Sector Operativo</span><span class="text-slate-800">${escapeHtml(rec['Sector Operativo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Localidad / Región</span><span class="text-slate-800">${escapeHtml(rec['Localidad'] || '-')} (${escapeHtml(rec['Región / Zona'] || '-')})</span></div>
+            <div class="sm:col-span-2"><span class="text-slate-500 block">Dirección Completa</span><strong class="text-slate-900">${escapeHtml(rec['Dirección'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Georeferencia</span><span class="font-mono text-slate-700">${escapeHtml(rec['Georeferencia'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Proveedor / Proyecto</span><span class="text-slate-800">${escapeHtml(rec['Proveedeor'] || '-')} (ID: ${escapeHtml(rec['Id de Proyecto'] || '-')})</span></div>
+          </div>
+        </div>
+
+        <!-- Bloque 3: Suscripción y Paquete -->
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="wifi" class="w-4 h-4 text-brand-500"></i> Suscripción y Servicios
+          </h4>
+          ${subItems.length > 0 ? `
+            <div class="flex flex-wrap gap-2">
+              ${subItems.map(item => `<span class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 text-xs font-medium">${escapeHtml(item)}</span>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin detalles de suscripción</p>'}
+        </div>
+
+        <!-- Bloque 4: Datos Técnicos / CTOs -->
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-4 h-4 text-brand-500"></i> Datos Técnicos (CTOs)
+          </h4>
+          ${techItems.length > 0 ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-mono bg-slate-50 p-3 rounded-lg border border-slate-200">
+              ${techItems.map(t => `<div class="text-slate-700 truncate" title="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin datos técnicos registrados</p>'}
+        </div>
+
+        <!-- Bloque 5: Historial de Estados -->
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="history" class="w-4 h-4 text-brand-500"></i> Historial de Estados
+          </h4>
+          ${historyItems.length > 0 ? `
+            <ul class="space-y-2 text-xs">
+              ${historyItems.map(h => `
+                <li class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 leading-relaxed">
+                  ${escapeHtml(h)}
+                </li>
+              `).join('')}
+            </ul>
+          ` : '<p class="text-xs text-slate-400">Sin historial disponible</p>'}
+        </div>
+      </div>
+
+      <div class="hidden"></div>
+    </div>
+  `;
+
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeDetailModal() {
+      document.getElementById('detailModal').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // UTILIDADES: EXPORTAR EXCEL, COPIAR Nº, LIMPIAR BASE Y TOASTS
+    // =========================================================================
+    function exportToExcel() {
+      if (masterRecords.length === 0) {
+        showToast('No hay registros en la base para exportar.', 'warning');
+        return;
+      }
+
+      const exportRows = masterRecords.map(rec => {
+        const cleanRow = {};
+        EXPECTED_HEADERS.forEach(h => {
+          cleanRow[h] = rec[h] || '';
+        });
+        cleanRow['Estado Carga'] = rec._isRecent ? 'RECIEN AGREGADO' : 'BASE';
+        cleanRow['Fecha Incorporación'] = rec._addedAt || '';
+        return cleanRow;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Ordenes_Consolidadas');
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `Ordenes_SGI_${dateStr}.xlsx`);
+      showToast('Archivo Excel descargado correctamente.', 'success');
+    }
+
+    function copyNewOrderNumbers() {
+      if (pendingNewRecords.length === 0) return;
+      const text = pendingNewRecords.map(r => r['Nº']).join('\n');
+
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+
+      showToast(`Se copiaron ${pendingNewRecords.length} números de orden al portapapeles.`, 'success');
+    }
+
+    function requestClearBase() {
+      if (masterRecords.length === 0) {
+        showToast('La base ya se encuentra vacía.', 'warning');
+        return;
+      }
+      const modal = document.getElementById('confirmClearModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeClearModal() {
+      const modal = document.getElementById('confirmClearModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function confirmClearBase() {
+      masterRecords = [];
+      pendingNewRecords = [];
+      pendingOmitted = [];
+      lastBatchTime = null;
+      localStorage.removeItem(STORAGE_KEY);
+      closeClearModal();
+      dismissComparison();
+      refreshAllUI(0);
+      showToast('Se eliminaron todos los registros de la Base Principal.', 'success');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      const styles = {
+        success: 'bg-slate-900 text-white border-emerald-500',
+        warning: 'bg-slate-900 text-white border-amber-500',
+        error: 'bg-rose-950 text-white border-rose-500',
+        info: 'bg-slate-900 text-white border-brand-500'
+      };
+
+      const iconNames = {
+        success: 'check-circle-2',
+        warning: 'alert-circle',
+        error: 'x-circle',
+        info: 'info'
+      };
+
+      const iconColors = {
+        success: 'text-emerald-400',
+        warning: 'text-amber-400',
+        error: 'text-rose-400',
+        info: 'text-brand-400'
+      };
+
+      toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 shadow-lg text-xs sm:text-sm font-medium max-w-md animate-fade-in ${styles[type] || styles.info}`;
+      toast.innerHTML = `
+        <i data-lucide="${iconNames[type] || 'info'}" class="w-4 h-4 shrink-0 ${iconColors[type] || iconColors.info}"></i>
+        <span>${escapeHtml(message)}</span>
+      `;
+
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.25s ease';
+        setTimeout(() => toast.remove(), 260);
+      }, 4200);
+    }
+
+    function formatNow() {
+      const d = new Date();
+      return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // =========================================================================
+    // DATOS DE EJEMPLO INTEGRADOS (EXACTOS DEL FORMATO DEL USUARIO)
+    // =========================================================================
+    const SAMPLE_DATA_BLOCK_1 = `\tNº\tCod Seguimiento Cliente\tNúmero Documento\tEstado\tCuadrilla\tFecha Solicitud\tPaís / Empresa\tCliente\tProducto\tTipo Ubicación\tUbicación\tMotivo Regestión\tSector Operativo\tTipo Orden\tTipo Trabajo\tMotivo Trabajo\tLocalidad\tDirección\tCódigo De Seguimiento\tFecha Visita\tRegión / Zona\tTipo Documento\tPrioridad\tMóvil\tFijo\tInicio de Visita\tFin de Visita\tMotivo de Cancelación\tMotivo de Finalización\tMotivo de Anulación\tMotivo de Suspensión\tGeoreferencia\tProveedeor\tId de Proyecto\tCódigo Postal\tMotivo\tDatos Técnicos\tFecha Estado\tSuscripción\tHistorial de Estados\tEmail
+3615602
+3277919
+73438571
+Agendada
+P 3 TECSYCOM SGI LUIS ANGEL CARRION DIAZ
+18/11/2026 12:00
+Perú
+
+GESTIÓN PROVINCIA
+CP
+CINTHIA PAOLA RAMIREZ RODRIGUEZ
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - CENTRO 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+CALLE ANTONIO RAIMONDI 1380 PUEBLO JOVEN ANTONIO RAIMONDI DE ACQUA SECTOR 1 (LA VICTORIA, CHICLAYO, LAMBAYEQUE) PISO 3 DPTO/INTERIOR 1
+22969460
+18/11/2026 12:00\t
+REGION CENTRO 1 CHICLAYO
+
+LA VICTORIA
+Cédula de identidad
+Media
+958821007
+0
+-6.8025490,-79.8494610
+TECSYCOM
+14007
+COORDENADA CTO1/Númerico/-6.803195-79.848979;COORDENADA CTO2/Númerico/-6.803514-79.849559;COORDENADA CTO3/Númerico/-6.801638-79.849907;CTO1/Alfanumérico/WN-61290-260046;CTO2/Alfanumérico/WN-61290-260044;CTO3/Alfanumérico/WN-61290-260052;DNI/Númerico/73438571;RRINST/Unidad/2;CCI/Alfanumérico/4024;RREF/Unidad/
+18/11/2026 00:09
+Campaña : Aumento de velocidad No aplica|Paquete: INTERNET 1000 Mbps |SVA's: WIN TV L1MAX PREMIUM + MESH (EN COMODATO)|Cantidad de Mesh: 2|Instalacion de mesh: No 0
+Fecha: 18/11/2026 00:06:49 Estado: Pendiente Usuario: Arnold Igor Alberto Lazo Alfaro Observacion: ;Fecha: 18/11/2026 00:09:07 Estado: Asignada Usuario: Administrador Observacion: Cuadrilla Asignada: P 3 TECSYCOM SGI LUIS ANGEL CARRION DIAZ;Fecha: 18/11/2026 00:09:07 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 12:00
+Media
+3615556
+3278535
+74540079
+Agendada
+P 3 TECSYCOM SGI LUIS ANGEL CARRION DIAZ
+18/11/2026 08:00
+Perú
+
+GESTIÓN PROVINCIA
+EM
+ERLENE MALCA TORRES
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - CENTRO 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+CALLE MANCO INCA 618 PUEBLO JOVEN MANCO INCA (LA VICTORIA, CHICLAYO, LAMBAYEQUE) PISO 1 DPTO/INTERIOR NA
+22970061
+18/11/2026 08:00\t
+REGION CENTRO 1 CHICLAYO
+
+LA VICTORIA
+Cédula de identidad
+Baja
+971394076
+971394076
+-6.7955730,-79.8434210
+TECSYCOM
+14007
+COORDENADA CTO1/Númerico/-6.795427-79.84338;COORDENADA CTO2/Númerico/-6.795303-79.8433;COORDENADA CTO3/Númerico/-6.795289-79.844018;CTO1/Alfanumérico/OP-740-122511;CTO2/Alfanumérico/WN-61290-259983;CTO3/Alfanumérico/WN-61290-259984;DNI/Númerico/74540079;RRINST/Unidad/1;CCI/Alfanumérico/5019;RREF/Unidad/
+18/11/2026 00:09
+Campaña : Aumento de velocidad No aplica|Paquete: INTERNET 350 Mbps |SVA's: FONO WIN 1000|Cantidad de Mesh: 0|Instalacion de mesh: No 0|Portabilidad Numérica: No
+Fecha: 18/11/2026 00:06:46 Estado: Pendiente Usuario: Arnold Igor Alberto Lazo Alfaro Observacion: ;Fecha: 18/11/2026 00:09:07 Estado: Asignada Usuario: Administrador Observacion: Cuadrilla Asignada: P 3 TECSYCOM SGI LUIS ANGEL CARRION DIAZ;Fecha: 18/11/2026 00:09:07 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 08:00
+Baja
+3615500
+3274836
+46376772
+Agendada
+P 2 TECSYCOM SGI JONNY RAFAEL VEGA CADILLO
+18/11/2026 08:00
+Perú
+
+GESTIÓN PROVINCIA
+KJ
+KARYN JANNET MONTALVO CRUZ
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - CENTRO 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+CALLE NICARAGUA 1390 CPMEN ENCARNACION (JOSE LEONARDO ORTIZ, CHICLAYO, LAMBAYEQUE) PISO 1 DPTO/INTERIOR K
+22966486
+18/11/2026 08:00\t
+REGION CENTRO 1 CHICLAYO
+
+JOSE LEONARDO ORTIZ
+Cédula de identidad
+Media
+906125194
+0
+-6.7478700,-79.8442020
+TECSYCOM
+14004
+COORDENADA CTO1/Númerico/-6.747529-79.84402;COORDENADA CTO2/Númerico/-6.748518-79.844386;COORDENADA CTO3/Númerico/-6.748444-79.843382;CTO1/Alfanumérico/WN-61290-1278771;CTO2/Alfanumérico/WN-61290-1278767;CTO3/Alfanumérico/WN-61290-1278774;DNI/Númerico/46376772;RRINST/Unidad/5;CCI/Alfanumérico/1003;RREF/Unidad/
+18/11/2026 00:09
+Campaña : Aumento de velocidad 1000 Mbps x 180 dias|Paquete: INTERNET 550 Mbps |SVA's: WIN TV PREMIUM|Cantidad de Mesh: 0|Instalacion de mesh: No 0
+Fecha: 18/11/2026 00:06:42 Estado: Pendiente Usuario: Arnold Igor Alberto Lazo Alfaro Observacion: ;Fecha: 18/11/2026 00:09:07 Estado: Asignada Usuario: Administrador Observacion: Cuadrilla Asignada: P 2 TECSYCOM SGI JONNY RAFAEL VEGA CADILLO;Fecha: 18/11/2026 00:09:07 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 08:00
+Media
+3615466
+3277583
+73654177
+Agendada
+P 1 TECSYCOM SGI JORGE JESUS CHAFLOQUE SIESQUEN
+18/11/2026 08:00
+Perú
+
+GESTIÓN PROVINCIA
+AA
+ALVA ANTONELLA IRIGOIN MOSCOL
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - ESTE 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+CENTRO POBLADO NUEVO HORIZONTE MZ B LT 46 (POMALCA, CHICLAYO, LAMBAYEQUE) PISO 1 DPTO/INTERIOR NA
+22969154
+18/11/2026 08:00\t
+REGION ESTE 1 CHICLAYO
+
+POMALCA
+Cédula de identidad
+Baja
+916524294
+0
+-6.7653210,-79.7779480
+TECSYCOM
+14006
+COORDENADA CTO1/Númerico/-6.765607-79.777457;COORDENADA CTO2/Númerico/-6.764986-79.778754;COORDENADA CTO3/Númerico/-6.765832-79.778773;CTO1/Alfanumérico/WN-61290-1285227;CTO2/Alfanumérico/WN-14008-1940810;CTO3/Alfanumérico/WN-14008-1940807;DNI/Númerico/73654177;RRINST/Unidad/1;CCI/Alfanumérico/4025;RREF/Unidad/
+18/11/2026 00:09
+Campaña : Aumento de velocidad No aplica|Paquete: INTERNET 1000 Mbps |SVA's: WIN TV L1MAX PREMIUM + MESH (EN COMODATO)|Cantidad de Mesh: 1|Instalacion de mesh: No 0
+Fecha: 18/11/2026 00:06:39 Estado: Pendiente Usuario: Arnold Igor Alberto Lazo Alfaro Observacion: ;Fecha: 18/11/2026 00:09:07 Estado: Asignada Usuario: Administrador Observacion: Cuadrilla Asignada: P 1 TECSYCOM SGI JORGE JESUS CHAFLOQUE SIESQUEN;Fecha: 18/11/2026 00:09:07 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 08:00
+Baja
+3615464
+3276381
+41548828
+Agendada
+P 1 TECSYCOM SGI JORGE JESUS CHAFLOQUE SIESQUEN
+18/11/2026 12:00
+Perú
+
+GESTIÓN PROVINCIA
+JM
+JOSE MIGUEL VASQUEZ CHANAME
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - ESTE 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+CALLE SAN SALVADOR CENTRO POBLADO MENOR LA UNION MZ 39 LT SN (POMALCA, CHICLAYO, LAMBAYEQUE) PISO 1 DPTO/INTERIOR NA
+22967996
+18/11/2026 12:00\t
+REGION ESTE 1 CHICLAYO
+
+POMALCA
+Cédula de identidad
+Media
+933147359
+0
+-6.7668180,-79.7920740
+TECSYCOM
+14006
+COORDENADA CTO1/Númerico/-6.766835-79.791481;COORDENADA CTO2/Númerico/-6.766364-79.791038;COORDENADA CTO3/Númerico/-6.765909-79.791258;CTO1/Alfanumérico/WN-61290-1284838;CTO2/Alfanumérico/WN-61290-1284924;CTO3/Alfanumérico/WN-61290-1284927;DNI/Númerico/41548828;RRINST/Unidad/2;CCI/Alfanumérico/5019;RREF/Unidad/
+18/11/2026 00:09
+Campaña : Aumento de velocidad No aplica|Paquete: INTERNET 1000 Mbps |SVA's: WIN TV L1MAX PREMIUM + MESH (EN COMODATO)|Cantidad de Mesh: 2|Instalacion de mesh: No 0
+Fecha: 18/11/2026 00:06:39 Estado: Pendiente Usuario: Arnold Igor Alberto Lazo Alfaro Observacion: ;Fecha: 18/11/2026 00:09:07 Estado: Asignada Usuario: Administrador Observacion: Cuadrilla Asignada: P 1 TECSYCOM SGI JORGE JESUS CHAFLOQUE SIESQUEN;Fecha: 18/11/2026 00:09:07 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 12:00
+Media`;
+
+    const SAMPLE_NEW_RECORDS_BLOCK = `3615715
+3279102
+44891230
+Agendada
+P 2 TECSYCOM SGI JONNY RAFAEL VEGA CADILLO
+18/11/2026 14:00
+Perú
+
+GESTIÓN PROVINCIA
+MR
+MARIA ROSA DELGADO SANTISTEBAN
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - CENTRO 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+AV SALAVERRY 450 URB SAN EDUARDO (CHICLAYO, CHICLAYO, LAMBAYEQUE) PISO 2 DPTO/INTERIOR 201
+22971104
+18/11/2026 14:00\t
+REGION CENTRO 1 CHICLAYO
+
+CHICLAYO
+Cédula de identidad
+Alta
+944812903
+0
+-6.7712300,-79.8419200
+TECSYCOM
+14007
+COORDENADA CTO1/Númerico/-6.771100-79.841800;CTO1/Alfanumérico/WN-61290-260110;DNI/Númerico/44891230;RRINST/Unidad/1;CCI/Alfanumérico/3012;RREF/Unidad/
+18/11/2026 08:15
+Campaña : Aumento de velocidad No aplica|Paquete: INTERNET 1000 Mbps |SVA's: WIN TV L1MAX PREMIUM|Cantidad de Mesh: 0|Instalacion de mesh: No 0
+Fecha: 18/11/2026 08:10:12 Estado: Pendiente Usuario: Administrador Observacion: ;Fecha: 18/11/2026 08:15:00 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 14:00
+Alta
+3615789
+3279450
+71029384
+Agendada
+P 3 TECSYCOM SGI LUIS ANGEL CARRION DIAZ
+18/11/2026 16:00
+Perú
+
+GESTIÓN PROVINCIA
+LC
+LUIS CARLOS MENDOZA PERALTA
+Multifamiliar
+INTERNET FIBRA OPTICA SGI PROV
+Domicilio
+Domicilio Particular
+CHICLAYO - ESTE 1
+Técnica
+INSTALACION
+ATENCION POR SOLICITUD DE CLIENTE
+CHICLAYO
+
+LAMBAYEQUE
+JR FRANCISCO BOLOGNESI 892 (JOSE LEONARDO ORTIZ, CHICLAYO, LAMBAYEQUE) PISO 1 DPTO/INTERIOR A
+22971490
+18/11/2026 16:00\t
+REGION ESTE 1 CHICLAYO
+
+JOSE LEONARDO ORTIZ
+Cédula de identidad
+Media
+987123450
+0
+-6.7591200,-79.8398100
+TECSYCOM
+14004
+COORDENADA CTO1/Númerico/-6.759001-79.839750;CTO1/Alfanumérico/WN-61290-1278900;DNI/Númerico/71029384;RRINST/Unidad/2;CCI/Alfanumérico/2018;RREF/Unidad/
+18/11/2026 08:20
+Campaña : Aumento de velocidad 1000 Mbps x 180 dias|Paquete: INTERNET 550 Mbps |SVA's: MESH (EN COMODATO)|Cantidad de Mesh: 1|Instalacion de mesh: No 0
+Fecha: 18/11/2026 08:18:05 Estado: Pendiente Usuario: Administrador Observacion: ;Fecha: 18/11/2026 08:20:00 Estado: Agendada Usuario: Administrador Observacion: Fecha agendada: 18/11/2026 16:00
+Media`;
+
+    function loadSampleInitial() {
+      const textarea = document.getElementById('pasteInput');
+      textarea.value = SAMPLE_DATA_BLOCK_1;
+      document.getElementById('clearInputBtn').classList.remove('hidden');
+      processPastedData();
+    }
+
+    function loadSampleSecondPaste() {
+      const textarea = document.getElementById('pasteInput');
+      // Incluye los 5 registros anteriores + 2 órdenes nuevas (3615715 y 3615789)
+      textarea.value = SAMPLE_DATA_BLOCK_1 + '\n' + SAMPLE_NEW_RECORDS_BLOCK;
+      document.getElementById('clearInputBtn').classList.remove('hidden');
+      processPastedData();
+    }
+  </script>
+</body>
+</html>
