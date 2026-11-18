@@ -893,12 +893,12 @@
       }
 
       // ESCENARIO 2: Ya existen registros -> Comparar por primera columna "Nº"
-      // Si el registro ya existe y su Estado cambió, actualizar únicamente su Estado sin marcarlo como nuevo
+      // Si el registro ya existe y cambió el valor de cualquier columna, actualizar todas las columnas modificadas sin marcarlo como nuevo
       const masterById = new Map(masterRecords.map(r => [String(r['Nº']).trim(), r]));
 
       const newOnes = [];
       const existingOnes = [];
-      const updatedStatuses = [];
+      const updatedRecordsInfo = [];
 
       for (const rec of incomingRecords) {
         const id = String(rec['Nº']).trim();
@@ -907,21 +907,34 @@
         if (existingRec) {
           const prevEstado = (existingRec['Estado'] || '').trim();
           const nextEstado = (rec['Estado'] || '').trim();
+          const changedFields = [];
 
-          if (nextEstado && prevEstado.toLowerCase() !== nextEstado.toLowerCase()) {
-            existingRec['Estado'] = nextEstado;
-            if (rec['Fecha Estado']) existingRec['Fecha Estado'] = rec['Fecha Estado'];
-            if (rec['Historial de Estados']) existingRec['Historial de Estados'] = rec['Historial de Estados'];
-            if (rec['Inicio de Visita']) existingRec['Inicio de Visita'] = rec['Inicio de Visita'];
-            if (rec['Fin de Visita']) existingRec['Fin de Visita'] = rec['Fin de Visita'];
-            existingRec._statusUpdatedAt = formatNow();
-            existingRec._prevEstado = prevEstado;
+          for (const header of EXPECTED_HEADERS) {
+            if (header === 'Nº') continue;
+            const oldVal = String(existingRec[header] || '').trim();
+            const newVal = String(rec[header] || '').trim();
 
-            updatedStatuses.push({
+            if (oldVal !== newVal) {
+              existingRec[header] = rec[header] || '';
+              changedFields.push(header);
+            }
+          }
+
+          if (changedFields.length > 0) {
+            existingRec._updatedAt = formatNow();
+            existingRec._changedFields = changedFields;
+            if (nextEstado && prevEstado.toLowerCase() !== nextEstado.toLowerCase()) {
+              existingRec._statusUpdatedAt = formatNow();
+              existingRec._prevEstado = prevEstado;
+            }
+
+            updatedRecordsInfo.push({
               id,
               cliente: existingRec['Cliente'] || '',
+              changedFields,
+              statusChanged: prevEstado.toLowerCase() !== nextEstado.toLowerCase(),
               from: prevEstado || '-',
-              to: nextEstado
+              to: nextEstado || '-'
             });
           }
 
@@ -933,13 +946,13 @@
 
       pendingNewRecords = newOnes;
       pendingOmitted = existingOnes;
-      lastUpdatedStatuses = updatedStatuses;
+      lastUpdatedStatuses = updatedRecordsInfo;
 
-      if (updatedStatuses.length > 0) {
+      if (updatedRecordsInfo.length > 0) {
         saveToStorage();
         refreshAllUI();
         showToast(
-          `Se actualizó el Estado de ${updatedStatuses.length} orden${updatedStatuses.length === 1 ? '' : 'es'} existente${updatedStatuses.length === 1 ? '' : 's'} en la Base Principal.`,
+          `Se actualizaron ${updatedRecordsInfo.length} registro${updatedRecordsInfo.length === 1 ? '' : 's'} existente${updatedRecordsInfo.length === 1 ? '' : 's'} con cambios en sus columnas.`,
           'info'
         );
       }
@@ -961,15 +974,15 @@
 
       document.getElementById('compNewBadge').textContent = `+${newCount} Nuevo${newCount === 1 ? '' : 's'}`;
       document.getElementById('compExistingBadge').textContent = updatedCount > 0
-        ? `${omittedCount} Existentes (${updatedCount} con Estado actualizado)`
+        ? `${omittedCount} Existentes (${updatedCount} actualizado${updatedCount === 1 ? '' : 's'})`
         : `${omittedCount} Existente${omittedCount === 1 ? '' : 's'} omitido${omittedCount === 1 ? '' : 's'}`;
 
       const updatedSummaryNote = updatedCount > 0
-        ? ` Además, ${updatedCount} orden${updatedCount === 1 ? '' : 'es'} existente${updatedCount === 1 ? '' : 's'} actualizó su Estado automáticamente en la tabla principal.`
+        ? ` Además, ${updatedCount} registro${updatedCount === 1 ? '' : 's'} existente${updatedCount === 1 ? '' : 's'} actualizó sus columnas modificadas en la tabla principal.`
         : '';
 
       document.getElementById('compSummaryText').textContent =
-        `Se analizaron ${newCount + omittedCount} registros pegados: ${newCount} no estaban en tu base y ${omittedCount} ya existían (omitidos).${updatedSummaryNote}`;
+        `Se analizaron ${newCount + omittedCount} registros pegados: ${newCount} no estaban en tu base y ${omittedCount} ya existían.${updatedSummaryNote}`;
 
       const mergeBtn = document.getElementById('btnMergeNew');
       const mergeLabel = document.getElementById('btnMergeNewLabel');
@@ -1022,17 +1035,22 @@
       if (omittedCount > 0) {
         omittedFooter.classList.remove('hidden');
         document.getElementById('omittedToggleText').textContent = updatedCount > 0
-          ? `Ver los ${omittedCount} registros existentes (${updatedCount} actualizaron su Estado)`
+          ? `Ver los ${omittedCount} registros existentes (${updatedCount} con datos actualizados)`
           : `Ver los ${omittedCount} registro${omittedCount === 1 ? '' : 's'} existente${omittedCount === 1 ? '' : 's'} que fueron omitidos`;
         const updatedMap = new Map(lastUpdatedStatuses.map(u => [u.id, u]));
         document.getElementById('omittedPills').innerHTML = pendingOmitted.map(r => {
           const upd = updatedMap.get(String(r['Nº']).trim());
+          const detailBadge = upd
+            ? (upd.statusChanged
+                ? `${escapeHtml(upd.from)} → ${escapeHtml(upd.to)}${upd.changedFields.length > 1 ? ` (+${upd.changedFields.length - 1} col.)` : ''}`
+                : `Actualizado: ${escapeHtml(upd.changedFields.slice(0, 3).join(', '))}${upd.changedFields.length > 3 ? '...' : ''}`)
+            : '';
           return `
             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border ${upd ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200'} text-xs text-slate-600">
               <strong class="text-slate-800">${escapeHtml(r['Nº'])}</strong>
               <span class="text-slate-400">•</span>
               <span class="truncate max-w-[160px]">${escapeHtml(r['Cliente'] || 'Sin nombre')}</span>
-              ${upd ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[11px]">${escapeHtml(upd.from)} → ${escapeHtml(upd.to)}</span>` : ''}
+              ${upd ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[11px]" title="Columnas modificadas: ${escapeHtml(upd.changedFields.join(', '))}">${detailBadge}</span>` : ''}
             </span>
           `;
         }).join('');
@@ -1199,11 +1217,13 @@
           const val = rec[header] || '';
 
           if (idx === 0) {
+            const wasUpdated = Boolean(rec._updatedAt && Array.isArray(rec._changedFields) && rec._changedFields.length > 0);
             return `
               <td class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
                 <div class="flex items-center gap-2">
                   <span class="font-bold text-slate-900">${escapeHtml(val)}</span>
                   ${isRecent ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">NUEVO</span>` : ''}
+                  ${wasUpdated ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300" title="Columnas actualizadas (${escapeHtml(rec._updatedAt)}): ${escapeHtml(rec._changedFields.join(', '))}">ACTUALIZADO</span>` : ''}
                 </div>
               </td>
             `;
