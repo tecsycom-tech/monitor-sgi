@@ -110,6 +110,11 @@
           Guardado automático activo
         </span>
 
+        <button onclick="exportBaseWin()" class="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-semibold text-white bg-slate-800 border border-slate-800 rounded-xl hover:bg-slate-900 transition shadow-xs">
+          <i data-lucide="table-2" class="w-4 h-4 text-emerald-400"></i>
+          <span class="hidden sm:inline">Excel Base WIN</span>
+        </button>
+
         <button onclick="exportToExcel()" class="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition shadow-xs">
           <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-600"></i>
           <span class="hidden sm:inline">Exportar Excel</span>
@@ -634,6 +639,12 @@
       const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const lines = normalized.split('\n');
 
+      // Caso 0: Formato estructurado "Tabla de seguimiento de cliente" (Nº | Información | Valor)
+      const followUpRecords = parseFollowUpTableFormat(normalized);
+      if (followUpRecords.length > 0) {
+        return followUpRecords;
+      }
+
       // Detectar si es formato TSV tabular (ej. copiado desde Excel con 41 columnas)
       const nonEmptyLines = lines.filter(l => l.trim().length > 0);
       const tsvDataLines = nonEmptyLines.filter(l => {
@@ -648,6 +659,227 @@
 
       // Caso principal: Formato bloque multi-línea copiado desde tabla HTML web SGI
       return parseMultilineSgiFormat(lines);
+    }
+
+    // Parser 0: Formato estructurado tipo tabla ("Tabla de seguimiento de cliente": Nº | Información | Valor)
+    function parseFollowUpTableFormat(normalizedText) {
+      if (!/Tabla de seguimiento de cliente/i.test(normalizedText) && !/\d+\s+\t?\s*(?:Cod\.?\s*Seguimiento\s*Cliente|Número\s*Documento|Sector\s*Operativo)/i.test(normalizedText)) {
+        return [];
+      }
+
+      const lines = normalizedText.split('\n').map(l => l.replace(/\r/g, ''));
+      const records = [];
+      let currentRec = null;
+      let section = 'none'; // 'follow' | 'history' | 'tech' | 'none'
+      const historyEntries = [];
+      const techEntries = [];
+
+      const finalizeCurrent = () => {
+        if (!currentRec || !currentRec['Nº']) return;
+
+        // Completar Suscripción si viene detallada y aún no está poblada
+        if (!currentRec['Suscripción'] && techEntries.length > 0) {
+          currentRec['Suscripción'] = techEntries.map(t => `${t.param}: ${t.val}`).join(' | ');
+        }
+
+        // Completar Datos Técnicos si vienen detallados
+        if (techEntries.length > 0) {
+          const formattedTech = techEntries
+            .map(t => `${t.param}/${t.type || 'Texto'}/${t.val}`)
+            .join(';');
+          currentRec['Datos Técnicos'] = currentRec['Datos Técnicos']
+            ? `${currentRec['Datos Técnicos']} | ${formattedTech}`
+            : formattedTech;
+        }
+
+        // Completar Historial de Estados si está presente
+        if (historyEntries.length > 0) {
+          const histText = historyEntries
+            .map(h => `Fecha: ${h.date} Estado: ${h.status} Usuario: ${h.user} Observacion: ${h.obs}`)
+            .join(';');
+          currentRec['Historial de Estados'] = currentRec['Historial de Estados']
+            ? `${currentRec['Historial de Estados']};${histText}`
+            : histText;
+        }
+
+        records.push(currentRec);
+      };
+
+      const cleanDash = (v) => {
+        const t = (v || '').trim();
+        return (t === '—' || t === '-') ? '' : t;
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const rawLine = lines[i].trim();
+        if (!rawLine) continue;
+
+        if (/^Tabla de seguimiento de cliente$/i.test(rawLine)) {
+          section = 'follow';
+          continue;
+        }
+        if (/^Historial de estados$/i.test(rawLine)) {
+          section = 'history';
+          continue;
+        }
+        if (/^Datos t[eé]cnicos detallados$/i.test(rawLine)) {
+          section = 'tech';
+          continue;
+        }
+
+        // Encabezados internos de tablas
+        if (/^Nº\s+Información\s+Valor$/i.test(rawLine) || /^Información\s+Valor$/i.test(rawLine)) continue;
+        if (/^Fecha y hora\s+Estado\s+Usuario\s+Observación$/i.test(rawLine)) continue;
+        if (/^Parámetro\s+Tipo\s+Valor$/i.test(rawLine)) continue;
+
+        // Parsear filas de "Tabla de seguimiento de cliente" (soporta tabs o múltiples espacios)
+        if (section === 'follow' || section === 'none') {
+          let parts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          // Si vienen 3 columnas: [índice, Información, Valor]
+          if (parts.length >= 3 && /^\d+$/.test(parts[0])) {
+            const label = parts[1];
+            const val = cleanDash(parts.slice(2).join(' '));
+
+            if (/^Nº$/i.test(label)) {
+              if (currentRec && currentRec['Nº']) {
+                finalizeCurrent();
+                historyEntries.length = 0;
+                techEntries.length = 0;
+              }
+              currentRec = createEmptyRecord();
+              currentRec['Nº'] = val;
+              section = 'follow';
+              continue;
+            }
+
+            if (currentRec) {
+              assignFollowUpField(currentRec, label, val);
+              continue;
+            }
+          }
+
+          // Si vienen 2 columnas sin índice numérico: [Información, Valor]
+          if (parts.length >= 2 && !/^\d{2}\/\d{2}\/\d{4}/.test(parts[0])) {
+            const label = parts[0];
+            const val = cleanDash(parts.slice(1).join(' '));
+            if (/^Nº$/i.test(label) && val) {
+              if (currentRec && currentRec['Nº']) {
+                finalizeCurrent();
+                historyEntries.length = 0;
+                techEntries.length = 0;
+              }
+              currentRec = createEmptyRecord();
+              currentRec['Nº'] = val;
+              section = 'follow';
+              continue;
+            }
+            if (currentRec) {
+              assignFollowUpField(currentRec, label, val);
+              continue;
+            }
+          }
+        }
+
+        // Parsear filas de "Historial de estados"
+        if (section === 'history' && currentRec) {
+          const hParts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          if (hParts.length >= 2 && /^\d{2}\/\d{2}\/\d{4}/.test(hParts[0])) {
+            historyEntries.push({
+              date: hParts[0] || '',
+              status: hParts[1] || '',
+              user: hParts[2] || '',
+              obs: cleanDash(hParts.slice(3).join(' '))
+            });
+          }
+          continue;
+        }
+
+        // Parsear filas de "Datos técnicos detallados"
+        if (section === 'tech' && currentRec) {
+          const tParts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          if (tParts.length >= 2) {
+            techEntries.push({
+              param: tParts[0] || '',
+              type: tParts.length >= 3 ? (tParts[1] || '') : '',
+              val: cleanDash(tParts.length >= 3 ? tParts.slice(2).join(' ') : tParts[1])
+            });
+          }
+          continue;
+        }
+      }
+
+      finalizeCurrent();
+      return records;
+    }
+
+    function assignFollowUpField(rec, label, val) {
+      const norm = label
+        .toLowerCase()
+        .replace(/\./g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const map = {
+        'n': 'Nº',
+        'cod seguimiento cliente': 'Cod Seguimiento Cliente',
+        'codigo seguimiento cliente': 'Cod Seguimiento Cliente',
+        'numero documento': 'Número Documento',
+        'estado': 'Estado',
+        'cuadrilla': 'Cuadrilla',
+        'fecha solicitud': 'Fecha Solicitud',
+        'pais / empresa': 'País / Empresa',
+        'pais empresa': 'País / Empresa',
+        'cliente': 'Cliente',
+        'producto': 'Producto',
+        'tipo ubicacion': 'Tipo Ubicación',
+        'ubicacion': 'Ubicación',
+        'motivo regestion': 'Motivo Regestión',
+        'sector operativo': 'Sector Operativo',
+        'tipo orden': 'Tipo Orden',
+        'tipo trabajo': 'Tipo Trabajo',
+        'motivo trabajo': 'Motivo Trabajo',
+        'localidad': 'Localidad',
+        'direccion': 'Dirección',
+        'codigo de seguimiento': 'Código De Seguimiento',
+        'fecha visita': 'Fecha Visita',
+        'region / zona': 'Región / Zona',
+        'region zona': 'Región / Zona',
+        'tipo documento': 'Tipo Documento',
+        'prioridad': 'Prioridad',
+        'movil': 'Móvil',
+        'fijo': 'Fijo',
+        'inicio de visita': 'Inicio de Visita',
+        'fin de visita': 'Fin de Visita',
+        'motivo de cancelacion': 'Motivo de Cancelación',
+        'motivo de finalizacion': 'Motivo de Finalización',
+        'motivo de anulacion': 'Motivo de Anulación',
+        'motivo de suspension': 'Motivo de Suspensión',
+        'georeferencia': 'Georeferencia',
+        'proveedor': 'Proveedeor',
+        'proveedeor': 'Proveedeor',
+        'id de proyecto': 'Id de Proyecto',
+        'codigo postal': 'Código Postal',
+        'motivo': 'Motivo',
+        'datos tecnicos': 'Datos Técnicos',
+        'fecha estado': 'Fecha Estado',
+        'suscripcion': 'Suscripción',
+        'historial de estados': 'Historial de Estados',
+        'email': 'Email'
+      };
+
+      const targetHeader = map[norm];
+      if (targetHeader && Object.prototype.hasOwnProperty.call(rec, targetHeader)) {
+        rec[targetHeader] = val;
+      }
     }
 
     // Parser A: Formato TSV (cada fila separada por tabuladores en una sola línea)
@@ -773,6 +1005,9 @@
       // 9-12: Producto, Tipo Ubicación, Ubicación, Motivo Regestión
       const knownProducts = ['Multifamiliar', 'Unifamiliar', 'Condominio', 'Edificio', 'Comercial'];
       const prodIdx = afterClient.findIndex(l => knownProducts.some(k => k.toLowerCase() === l.toLowerCase()));
+      const knownOrderTypes = ['Técnica', 'Tecnica', 'Comercial', 'Postventa', 'Mantenimiento', 'Reclamo'];
+      const orderTypeIdx = afterClient.findIndex(l => knownOrderTypes.some(t => t.toLowerCase() === l.toLowerCase()));
+
       if (prodIdx !== -1) {
         rec['Producto'] = afterClient[prodIdx] || '';
         if (afterClient[prodIdx + 1] && afterClient[prodIdx + 1].includes('INTERNET')) {
@@ -781,14 +1016,38 @@
         if (afterClient[prodIdx + 2] && ['Domicilio', 'Negocio', 'Empresa'].includes(afterClient[prodIdx + 2])) {
           rec['Ubicación'] = afterClient[prodIdx + 2];
         }
-        if (afterClient[prodIdx + 3] && afterClient[prodIdx + 3].startsWith('Domicilio')) {
-          rec['Motivo Regestión'] = afterClient[prodIdx + 3];
+
+        const motivoRegSearchEnd = orderTypeIdx !== -1 ? orderTypeIdx : afterClient.length;
+        const ubicStart = prodIdx + 2;
+        for (let i = ubicStart; i < motivoRegSearchEnd; i++) {
+          const candidate = afterClient[i];
+          if (
+            candidate &&
+            !/^Domicilio$/i.test(candidate) &&
+            !candidate.startsWith('Domicilio') &&
+            !/^(CHICLAYO|LIMA|TRUJILLO|PIURA|AREQUIPA|CUSCO|ICA|HUANCAYO)\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)\b/i.test(candidate)
+          ) {
+            rec['Motivo Regestión'] = candidate;
+            break;
+          }
         }
       }
 
-      // Encontrar índices de anclas estructurales dentro de afterClient
-      const sectorIdx = afterClient.findIndex(l => /^[A-ZÑÁÉÍÓÚ\s]+-\s*[A-ZÑÁÉÍÓÚ0-9\s]+$/.test(l) && !l.includes('WN-') && !l.includes('OP-'));
-      if (sectorIdx !== -1) {
+      // Encontrar índices de Tipo Orden, Tipo Trabajo, Motivo Trabajo y Sector Operativo
+      const isRealSectorOperativo = (l) =>
+        /^(CHICLAYO|LIMA|TRUJILLO|PIURA|AREQUIPA|CUSCO|ICA|HUANCAYO|CHIMBOTE|TACNA|JULIACA|TARAPOTO|PUCALLPA|IQUITOS|HUANUCO|AYACUCHO|CAJAMARCA|PUNO)\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)(\s+\d+)?$/i.test(l) ||
+        (/^[A-ZÑÁÉÍÓÚ\s]{3,20}\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)(\s+\d+)?$/i.test(l) && !l.includes('WN-') && !l.includes('OP-'));
+
+      const sectorIdx = afterClient.findIndex(l => isRealSectorOperativo(l));
+
+      if (orderTypeIdx !== -1) {
+        const orderSeq = afterClient.slice(orderTypeIdx).filter(l => l !== '');
+        rec['Tipo Orden'] = orderSeq[0] || '';
+        rec['Tipo Trabajo'] = orderSeq[1] || '';
+        rec['Motivo Trabajo'] = orderSeq[2] || '';
+        const sectorAfterMotivo = orderSeq.slice(3).find(l => isRealSectorOperativo(l));
+        rec['Sector Operativo'] = sectorAfterMotivo || (sectorIdx !== -1 ? afterClient[sectorIdx] : '');
+      } else if (sectorIdx !== -1) {
         rec['Sector Operativo'] = afterClient[sectorIdx];
         rec['Tipo Orden'] = afterClient[sectorIdx + 1] || '';
         rec['Tipo Trabajo'] = afterClient[sectorIdx + 2] || '';
@@ -807,10 +1066,17 @@
       if (dirIdx !== -1) {
         rec['Dirección'] = afterClient[dirIdx];
 
-        // 17: Localidad (líneas no vacías entre Motivo Trabajo y Dirección, ej: "CHICLAYO" y "LAMBAYEQUE")
-        const locStart = sectorIdx !== -1 ? sectorIdx + 4 : 0;
-        if (dirIdx > locStart) {
-          const locLines = afterClient.slice(locStart, dirIdx).filter(Boolean);
+        // 17: Localidad (líneas no vacías tras Tipo Orden, Tipo Trabajo, Motivo Trabajo y Sector Operativo hasta Dirección)
+        const anchorIdx = orderTypeIdx !== -1 ? orderTypeIdx + 3 : (sectorIdx !== -1 ? sectorIdx + 4 : 0);
+        if (dirIdx > anchorIdx) {
+          const locLines = afterClient.slice(anchorIdx, dirIdx).filter(l =>
+            l !== '' &&
+            !knownOrderTypes.some(t => t.toLowerCase() === l.toLowerCase()) &&
+            !/^(INSTALACION|AVERIA|MIGRACION|TRASLADO|RETIRO|MANTENIMIENTO|POSTVENTA)$/i.test(l) &&
+            !l.includes('ATENCION POR') &&
+            l !== rec['Motivo Trabajo'] &&
+            l !== rec['Sector Operativo']
+          );
           rec['Localidad'] = locLines.join(' / ');
         }
 
@@ -1400,14 +1666,20 @@
     function renderStatusBadge(status) {
       const s = (status || '').trim();
       const lower = s.toLowerCase();
-      if (lower === 'iniciada') {
-        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-amber-400 text-slate-950 border border-amber-500 shadow-xs"><span class="w-2 h-2 rounded-full bg-slate-950 animate-pulse"></span>${escapeHtml(s)}</span>`;
+      if (lower === 'en camino') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold" style="background-color:#FF00FF;color:#000000;border:1px solid #C800C8;"><span class="w-2 h-2 rounded-full bg-black"></span>${escapeHtml(s)}</span>`;
       }
-      if (lower === 'agendada') {
-        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-200"><span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>${escapeHtml(s)}</span>`;
+      if (lower === 'iniciada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-purple-200 text-black border border-purple-400 shadow-xs"><span class="w-2 h-2 rounded-full bg-black animate-pulse"></span>${escapeHtml(s)}</span>`;
       }
       if (lower === 'finalizada' || lower === 'completada') {
-        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${escapeHtml(s)}</span>`;
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-slate-200 border border-slate-300" style="color:#000080;"><span class="w-1.5 h-1.5 rounded-full" style="background-color:#000080;"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower === 'regestión' || lower === 'regestion') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold" style="background-color:#800020;color:#FFFFFF;border:1px solid #5C0017;"><span class="w-1.5 h-1.5 rounded-full bg-white"></span>${escapeHtml(s)}</span>`;
+      }
+      if (lower === 'agendada') {
+        return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-extrabold border border-amber-200" style="background-color:#FEF9C3;color:#78350F;"><span class="w-1.5 h-1.5 rounded-full" style="background-color:#78350F;"></span>${escapeHtml(s)}</span>`;
       }
       if (lower === 'pendiente' || lower === 'asignada') {
         return `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>${escapeHtml(s)}</span>`;
@@ -1431,13 +1703,6 @@
         return `<span class="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">${escapeHtml(p)}</span>`;
       }
       return `<span class="text-slate-400 text-xs">${escapeHtml(p || '-')}</span>`;
-    }
-
-    function extractPackageSummary(subText) {
-      if (!subText) return '-';
-      const match = subText.match(/Paquete:\s*([^|]+)/i);
-      if (match) return match[1].trim();
-      return subText;
     }
 
     // =========================================================================
@@ -1550,6 +1815,455 @@
 
     function closeDetailModal() {
       document.getElementById('detailModal').classList.add('hidden');
+    }
+
+    // =========================================================================
+    // EXPORTAR EXCEL BASE WIN (46 COLUMNAS HOMOLOGADAS)
+    // =========================================================================
+    const WIN_HEADERS = [
+      "OrdenId", "TipoOrden", "TipoTraba", "Motivo Trabajo", "F.Soli", "Cliente", "Tipo", "TipoClienId",
+      "Producto", "Cuadrilla", "F.Visita", "Estado", "Direccion", "Localidad", "Provincia", "Direccion1",
+      "FechaUltiEsta", "IdenServi", "Region", "Zona", "Empresa", "Pais", "Tipo Ubicación", "Ubicación",
+      "CodiSeguiClien", "CodiSegui", "Tipo Documento", "Número Documento", "Email", "TeleMovilNume",
+      "TeleFijoNume", "Prioridad", "FechaFinVisi", "FechaIniVisi", "Motivo Cancelación", "Motivo Finalización",
+      "Motivo Anulación", "Motivo Suspensión", "Georeferencia", "Datos Técnicos", "Proveedeor",
+      "Sector Operativo", "Motivo", "Motivo Regestión", "Id de Proyecto", "Código Postal"
+    ];
+
+    function toExcelSerialDate(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string') return '';
+      const s = dateStr.trim();
+      if (!s) return '';
+
+      let year, month, day, hour = 0, minute = 0, second = 0;
+
+      const mIso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+      if (mIso) {
+        year = parseInt(mIso[1], 10);
+        month = parseInt(mIso[2], 10);
+        day = parseInt(mIso[3], 10);
+        hour = mIso[4] ? parseInt(mIso[4], 10) : 0;
+        minute = mIso[5] ? parseInt(mIso[5], 10) : 0;
+        second = mIso[6] ? parseInt(mIso[6], 10) : 0;
+      } else {
+        let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (m) {
+          const p1 = parseInt(m[1], 10);
+          const p2 = parseInt(m[2], 10);
+          year = parseInt(m[3], 10);
+          hour = m[4] ? parseInt(m[4], 10) : 0;
+          minute = m[5] ? parseInt(m[5], 10) : 0;
+          second = m[6] ? parseInt(m[6], 10) : 0;
+
+          if (p1 > 12) {
+            day = p1;
+            month = p2;
+          } else if (p2 > 12) {
+            month = p1;
+            day = p2;
+          } else {
+            day = p1;
+            month = p2;
+          }
+        } else {
+          m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+          if (m) {
+            month = parseInt(m[1], 10);
+            day = parseInt(m[2], 10);
+            year = parseInt(m[3], 10);
+            hour = parseInt(m[4], 10);
+            minute = parseInt(m[5], 10);
+            second = m[6] ? parseInt(m[6], 10) : 0;
+            const ampm = m[7].toUpperCase();
+            if (ampm === 'PM' && hour < 12) hour += 12;
+            if (ampm === 'AM' && hour === 12) hour = 0;
+          } else {
+            return s;
+          }
+        }
+      }
+
+      const utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+      const excelEpochMs = Date.UTC(1899, 11, 30, 0, 0, 0);
+      const serial = (utcMs - excelEpochMs) / 86400000;
+      return Number(serial.toFixed(10));
+    }
+
+    function buildWinRowFromRecord(rec) {
+      const vals = new Array(WIN_HEADERS.length).fill('');
+      const getCol = (name) => String(rec[name] || '').trim();
+
+      const estadoWordsRegex = /^(Agendada|Pendiente|Asignada|Finalizada|Cancelada|Anulada|Suspendida|En camino|En proceso|Iniciada|En ejecución|Atendida|Cerrada|Registrada|Regestión|Regestion)$/i;
+      const geoRegex = /^-?\d+\.\d+\s*,\s*-?\d+\.\d+$/;
+      const dateRegex = /^(?:\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/;
+
+      // País / Empresa -> Pais y Empresa
+      const paisEmpresaRaw = getCol('País / Empresa');
+      let paisExt = '';
+      let empresaExt = '';
+      if (paisEmpresaRaw.includes('/')) {
+        const peParts = paisEmpresaRaw.split('/').map(p => p.trim());
+        paisExt = peParts[0] || '';
+        empresaExt = peParts[1] || '';
+      } else if (paisEmpresaRaw) {
+        if (/^per[úu]$/i.test(paisEmpresaRaw)) {
+          paisExt = paisEmpresaRaw;
+        } else {
+          empresaExt = paisEmpresaRaw;
+        }
+      }
+      if (!paisExt) paisExt = 'Perú';
+      if (!empresaExt) empresaExt = 'GESTIÓN PROVINCIA';
+
+      // Ubicación
+      const ubicacionRaw = getCol('Ubicación');
+      let ubicacionExt = ubicacionRaw;
+      if (ubicacionRaw.includes(';')) {
+        const uParts = ubicacionRaw.split(';').map(p => p.trim()).filter(Boolean);
+        ubicacionExt = uParts[uParts.length - 1] || ubicacionRaw;
+      } else if (/^Domicilio\s*-\s*Domicilio Particular$/i.test(ubicacionRaw)) {
+        ubicacionExt = 'Domicilio Particular';
+      }
+
+      const rawDir = getCol('Dirección');
+
+      // Localidad y Provincia
+      let locCol = getCol('Localidad');
+      let provPart = getCol('Provincia');
+      if (!locCol && rawDir) {
+        const parenMatch = rawDir.match(/\(([^)]+)\)/);
+        if (parenMatch) {
+          const pParts = parenMatch[1].split(',').map(p => p.trim()).filter(Boolean);
+          if (pParts.length >= 2) {
+            locCol = pParts[1];
+            if (!provPart) provPart = pParts[2] || pParts[1];
+          } else if (pParts.length === 1) {
+            locCol = pParts[0];
+          }
+        }
+      }
+      let locPart = locCol;
+      if (locCol.includes(',')) {
+        const parts = locCol.split(',').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      } else if (locCol.includes('/')) {
+        const parts = locCol.split('/').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      } else if (locCol.includes('-')) {
+        const parts = locCol.split('-').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      }
+
+      // Región / Zona -> Region y Zona
+      const regZonaRaw = getCol('Región / Zona');
+      let regionExt = regZonaRaw;
+      let zonaExt = '';
+      if (regZonaRaw.includes(';')) {
+        const rzParts = regZonaRaw.split(';').map(p => p.trim());
+        regionExt = rzParts[0] || '';
+        zonaExt = rzParts[1] || '';
+      } else if (regZonaRaw.includes('/')) {
+        const rzParts = regZonaRaw.split('/').map(p => p.trim());
+        regionExt = rzParts[0] || '';
+        zonaExt = rzParts[1] || '';
+      }
+
+      if (!zonaExt) {
+        const dirMatch = rawDir.match(/\(([^,]+)/);
+        if (dirMatch) zonaExt = dirMatch[1].trim();
+      }
+
+      // Fechas serializadas
+      const fechaEstadoRaw = getCol('Fecha Estado');
+      const fechaUltiEstaSerial = toExcelSerialDate(fechaEstadoRaw);
+      const fechaSoliSerial = toExcelSerialDate(getCol('Fecha Solicitud'));
+      const fechaVisitaSerial = toExcelSerialDate(getCol('Fecha Visita'));
+
+      // Cliente y Estado
+      let clienteColVal = getCol('Cliente');
+      if (estadoWordsRegex.test(clienteColVal) || geoRegex.test(clienteColVal) || dateRegex.test(clienteColVal)) {
+        clienteColVal = '';
+      }
+      clienteColVal = clienteColVal.replace(/\s*\((Multifamiliar|Residencial|Corporativo|Unifamiliar)\)\s*$/i, '').trim();
+
+      let estadoColVal = getCol('Estado');
+      if (!estadoWordsRegex.test(estadoColVal) && estadoColVal.length > 25) {
+        estadoColVal = '';
+      }
+
+      // Código de seguimiento
+      const codiSeguiVal = getCol('Código De Seguimiento');
+
+      // Motivo
+      const motivoRaw = getCol('Motivo');
+      let motivoExt = motivoRaw;
+      if (motivoRaw.includes(';')) {
+        motivoExt = motivoRaw.split(';')[0].trim();
+      }
+
+      // Email toma Prioridad si existe
+      const prioridadOrigen = getCol('Prioridad');
+      const emailDestino = prioridadOrigen || getCol('Email');
+
+      // Suscripción -> IdenServi
+      const suscripcionExt = getCol('Suscripción');
+
+      // Tipo Orden, Tipo Trabajo, Motivo Trabajo y Sector Operativo (asignación directa sin descartar por nombre de motivo)
+      const tipoOrdenExt = getCol('Tipo Orden');
+      const tipoTrabajoExt = getCol('Tipo Trabajo');
+      const motivoTrabajoExt = getCol('Motivo Trabajo');
+      let sectorOperativoExt = getCol('Sector Operativo');
+
+      if (estadoWordsRegex.test(sectorOperativoExt) || geoRegex.test(sectorOperativoExt)) {
+        sectorOperativoExt = '';
+      }
+
+      // Georeferencia
+      let geoExt = getCol('Georeferencia');
+      if (!geoRegex.test(geoExt)) {
+        geoExt = '';
+      }
+
+      // Datos Técnicos
+      const datosTecnicosExt = getCol('Datos Técnicos');
+
+      WIN_HEADERS.forEach((h, idx) => {
+        let val = '';
+
+        switch (h) {
+          case 'OrdenId':
+            val = getCol('Nº');
+            break;
+          case 'TipoOrden':
+            val = tipoOrdenExt;
+            break;
+          case 'TipoTraba':
+            val = tipoTrabajoExt;
+            break;
+          case 'Motivo Trabajo':
+            val = motivoTrabajoExt;
+            break;
+          case 'F.Soli':
+            val = fechaSoliSerial;
+            break;
+          case 'Cliente':
+            val = clienteColVal;
+            break;
+          case 'Tipo':
+            val = getCol('Tipo Ubicación');
+            break;
+          case 'TipoClienId':
+            val = '';
+            break;
+          case 'Producto':
+            val = getCol('Producto');
+            break;
+          case 'Cuadrilla':
+            val = getCol('Cuadrilla');
+            break;
+          case 'F.Visita':
+            val = fechaVisitaSerial;
+            break;
+          case 'Estado':
+            val = estadoColVal;
+            break;
+          case 'Direccion':
+          case 'Direccion1':
+            val = rawDir;
+            break;
+          case 'Localidad':
+            val = locPart;
+            break;
+          case 'Provincia':
+            val = provPart;
+            break;
+          case 'FechaUltiEsta':
+            val = fechaUltiEstaSerial;
+            break;
+          case 'IdenServi':
+            val = suscripcionExt;
+            break;
+          case 'Region':
+            val = regionExt;
+            break;
+          case 'Zona':
+            val = zonaExt || sectorOperativoExt;
+            break;
+          case 'Empresa':
+            val = empresaExt;
+            break;
+          case 'Pais':
+            val = paisExt;
+            break;
+          case 'Tipo Ubicación':
+            val = '';
+            break;
+          case 'Ubicación':
+            val = ubicacionExt;
+            break;
+          case 'CodiSeguiClien':
+            val = getCol('Cod Seguimiento Cliente');
+            break;
+          case 'CodiSegui':
+            val = codiSeguiVal;
+            break;
+          case 'Tipo Documento':
+            val = getCol('Tipo Documento');
+            break;
+          case 'Número Documento':
+            val = getCol('Número Documento');
+            break;
+          case 'Email':
+            val = emailDestino;
+            break;
+          case 'TeleMovilNume':
+            val = getCol('Móvil');
+            break;
+          case 'TeleFijoNume':
+            val = getCol('Fijo');
+            break;
+          case 'Prioridad':
+            val = prioridadOrigen;
+            break;
+          case 'FechaFinVisi':
+          case 'FechaIniVisi':
+            val = '';
+            break;
+          case 'Motivo Cancelación':
+            val = getCol('Motivo de Cancelación');
+            break;
+          case 'Motivo Finalización':
+            val = getCol('Motivo de Finalización');
+            break;
+          case 'Motivo Anulación':
+            val = getCol('Motivo de Anulación');
+            break;
+          case 'Motivo Suspensión':
+            val = getCol('Motivo de Suspensión');
+            break;
+          case 'Georeferencia':
+            val = geoExt;
+            break;
+          case 'Datos Técnicos':
+            val = datosTecnicosExt;
+            break;
+          case 'Proveedeor':
+            val = getCol('Proveedeor') || 'TECSYCOM';
+            break;
+          case 'Sector Operativo':
+            val = sectorOperativoExt;
+            break;
+          case 'Motivo':
+            val = motivoExt;
+            break;
+          case 'Motivo Regestión':
+            val = getCol('Motivo Regestión');
+            break;
+          case 'Id de Proyecto':
+            val = '';
+            break;
+          case 'Código Postal':
+            val = getCol('Código Postal');
+            break;
+          default:
+            val = getCol(h);
+            break;
+        }
+
+        vals[idx] = val !== undefined && val !== null ? val : '';
+      });
+
+      return vals;
+    }
+
+    async function ensureExcelJS() {
+      if (window.ExcelJS) return window.ExcelJS;
+      const urls = [
+        'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+        'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+      ];
+      for (const u of urls) {
+        try {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = u;
+            s.onload = res;
+            s.onerror = rej;
+            document.head.appendChild(s);
+          });
+          if (window.ExcelJS) return window.ExcelJS;
+        } catch (e) {
+          // Intentar siguiente CDN
+        }
+      }
+      throw new Error('No se pudo cargar la librería ExcelJS.');
+    }
+
+    async function exportBaseWin() {
+      if (masterRecords.length === 0) {
+        showToast('No hay registros en la base para exportar a Excel Base WIN.', 'warning');
+        return;
+      }
+
+      try {
+        const ExcelJS = await ensureExcelJS();
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Hoja de Datos', {
+          properties: { tabColor: { argb: 'FF004C99' } }
+        });
+
+        ws.getCell('A1').value = 'Consulta ordenes de Trabajo';
+        ws.getCell('A1').font = { name: 'Calibri', size: 11, bold: true };
+
+        for (let i = 2; i <= 7; i++) ws.addRow([]);
+
+        const headerRow = ws.getRow(8);
+        WIN_HEADERS.forEach((h, i) => {
+          const cell = headerRow.getCell(i + 1);
+          cell.value = h;
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF004C99' } };
+          cell.alignment = { horizontal: 'center', vertical: 'center' };
+        });
+
+        masterRecords.forEach((rec, rIdx) => {
+          const rowData = buildWinRowFromRecord(rec);
+          ws.addRow(rowData);
+          const dataRow = ws.getRow(9 + rIdx);
+          WIN_HEADERS.forEach((_, i) => {
+            dataRow.getCell(i + 1).font = { name: 'Calibri', size: 10 };
+          });
+        });
+
+        ws.columns.forEach(col => {
+          let maxLen = 10;
+          col.eachCell({ includeEmpty: true }, cell => {
+            if (cell.value) maxLen = Math.max(maxLen, String(cell.value).length);
+          });
+          col.width = Math.min(Math.max(maxLen + 3, 12), 35);
+        });
+
+        const buf = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const d = new Date();
+        const p = n => String(n).padStart(2, '0');
+        a.href = url;
+        a.download = `misOrdenesdeTrabajo${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        showToast('¡Excel Base WIN exportado con las 46 columnas!');
+      } catch (e) {
+        console.error(e);
+        showToast('Error al exportar Excel Base WIN: ' + e.message, 'error');
+      }
     }
 
     // =========================================================================
@@ -1709,7 +2423,7 @@ LAMBAYEQUE
 CALLE ANTONIO RAIMONDI 1380 PUEBLO JOVEN ANTONIO RAIMONDI DE ACQUA SECTOR 1 (LA VICTORIA, CHICLAYO, LAMBAYEQUE) PISO 3 DPTO/INTERIOR 1
 22969460
 18/11/2026 12:00\t
-REGION CENTro 1 CHICLAYO
+REGION CENTRO 1 CHICLAYO
 
 LA VICTORIA
 Cédula de identidad
