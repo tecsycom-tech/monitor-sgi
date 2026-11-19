@@ -555,6 +555,12 @@
       'Suscripción', 'Historial de Estados', 'Email'
     ];
 
+    // Alias visuales SOLO para los encabezados de la Tabla Principal (no afecta exportación)
+    const DISPLAY_HEADER_ALIASES = {
+      'Cod Seguimiento Cliente': 'Cod Cliente',
+      'Número Documento': 'Documento'
+    };
+
     // =========================================================================
     // INICIALIZACIÓN
     // =========================================================================
@@ -577,16 +583,18 @@
       // Encabezados para la tabla principal (41 columnas exactas + columna visual Tiempo Transcurrido + Ficha)
       const masterHead = document.getElementById('masterTableHead');
       masterHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
+        const displayLabel = DISPLAY_HEADER_ALIASES[header] || header;
+
         if (idx === 0) {
-          return `<th class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">${escapeHtml(header)}</th>`;
+          return `<th class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">${escapeHtml(displayLabel)}</th>`;
         }
         if (header === 'Estado') {
-          return `<th class="py-3 px-3.5 whitespace-nowrap">${escapeHtml(header)}</th><th class="py-3 px-3.5 whitespace-nowrap text-brand-700" title="Indicador visual en web (no se exporta)">Tiempo Trans.</th>`;
+          return `<th class="py-3 px-3.5 whitespace-nowrap">${escapeHtml(displayLabel)}</th><th class="py-3 px-3.5 whitespace-nowrap text-brand-700" title="Indicador visual en web (no se exporta)">Tiempo Transcurrido</th>`;
         }
         const minWidthClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
           ? 'min-w-[260px]'
           : '';
-        return `<th class="py-3 px-3.5 whitespace-nowrap ${minWidthClass}">${escapeHtml(header)}</th>`;
+        return `<th class="py-3 px-3.5 whitespace-nowrap ${minWidthClass}">${escapeHtml(displayLabel)}</th>`;
       }).join('') + `<th class="py-3 px-3.5 whitespace-nowrap text-right">Ficha</th>`;
 
       // Encabezados para la tabla de comparación de nuevos (41 columnas exactas)
@@ -678,9 +686,6 @@
 
     function calculateDilacion(rec) {
       const estadoRaw = String(rec['Estado'] || '').toUpperCase().trim();
-      // Homologar estados SGI con System.html:
-      // EN CAMINO -> umbral [50, 60]
-      // INICIADA / EN PROCESO -> umbral [60, 120]
       const isEnCamino = estadoRaw === 'EN CAMINO';
       const isIniciada = estadoRaw === 'INICIADA' || estadoRaw === 'EN PROCESO';
 
@@ -688,8 +693,6 @@
         return { texto: '-', nivel: 'inactivo', badgeCls: 'bg-slate-50 text-slate-400 border-slate-200' };
       }
 
-      // En SGI la marca de tiempo del último cambio de estado viene en "Fecha Estado"
-      // (o en el último registro del "Historial de Estados" si "Fecha Estado" estuviera vacío)
       let fechaRef = parseFechaPeru(rec['Fecha Estado']);
       if (!fechaRef && rec['Historial de Estados']) {
         const matches = [...String(rec['Historial de Estados']).matchAll(/Fecha:\s*(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/g)];
