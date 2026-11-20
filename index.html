@@ -1801,6 +1801,30 @@
     // =========================================================================
     // MODAL DE DETALLE COMPLETO
     // =========================================================================
+    function buildMapaTecnicosProvinciaUrl(rec) {
+      const baseUrl = 'https://tecsycom-tech.github.io/mapa-tecnicos/';
+      const params = new URLSearchParams();
+      params.set('zonal', 'PROVINCIA');
+
+      const geoRaw = String(rec['Georeferencia'] || '').trim();
+      const geoMatch = geoRaw.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (geoMatch) {
+        params.set('lat', geoMatch[1]);
+        params.set('lng', geoMatch[2]);
+      }
+
+      const codigo = String(rec['Cod Seguimiento Cliente'] || rec['Nº'] || '').trim();
+      if (codigo) {
+        params.set('codigo', codigo);
+      }
+
+      if (rec['Cliente']) {
+        params.set('cliente', String(rec['Cliente']).trim());
+      }
+
+      return `${baseUrl}?${params.toString()}`;
+    }
+
     function openDetailModal(orderNumber) {
       const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
       if (!rec) return;
@@ -1845,13 +1869,13 @@
         </div>
 
         <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between gap-2">
             <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <i data-lucide="map-pin" class="w-4 h-4 text-brand-500"></i> Ubicación y Contacto
             </h4>
-            ${rec['Georeferencia'] ? `
-              <a href="https://www.google.com/maps?q=${encodeURIComponent(rec['Georeferencia'])}" target="_blank" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
-                Abrir en Google Maps <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+            ${(rec['Georeferencia'] || rec['Cod Seguimiento Cliente'] || rec['Nº']) ? `
+              <a href="${buildMapaTecnicosProvinciaUrl(rec)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
+                Abrir en Mapa Técnicos (Provincia) <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
               </a>
             ` : ''}
           </div>
