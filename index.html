@@ -1698,7 +1698,7 @@
               <td class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing ? 'border-rose-400' : 'border-slate-200'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)]">
                 <div class="flex items-center gap-2">
                   <span class="font-bold ${isMissing ? 'text-rose-800' : 'text-slate-900'}">${escapeHtml(val)}</span>
-                  ${isMissing ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white animate-pulse" title="Alerta: este registro ya no figura en el sistema Megalogic (detectado ${escapeHtml(rec._missingDetectedAt || '')})">NO EN MEGALOGIC</span>` : ''}
+                  ${isMissing ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-rose-600 text-white animate-pulse" title="Alerta: este registro ya no figura en el sistema Megalogic (detectado ${escapeHtml(rec._missingDetectedAt || '')})">OT NO FIGURA</span>` : ''}
                   ${isRecent && !isMissing ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">NUEVO</span>` : ''}
                   ${wasUpdated && !isMissing ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300" title="Columnas actualizadas (${escapeHtml(rec._updatedAt)}): ${escapeHtml(rec._changedFields.join(', '))}">ACTUALIZADO</span>` : ''}
                 </div>
