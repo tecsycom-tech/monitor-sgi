@@ -39,7 +39,6 @@
   </script>
 
   <style>
-    /* Estilos de barra de desplazamiento sutiles */
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -54,7 +53,6 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #94a3b8;
     }
-    /* Animación suave para elementos nuevos */
     @keyframes fadeInSlide {
       from {
         opacity: 0;
@@ -68,7 +66,6 @@
     .animate-fade-in {
       animation: fadeInSlide 0.25s ease-out forwards;
     }
-    /* Alerta parpadeante para registros que ya no figuran en Megalogic */
     @keyframes missingPulseRed {
       0%, 100% {
         background-color: #fef2f2;
@@ -82,7 +79,6 @@
     .row-missing-alert {
       animation: missingPulseRed 1.2s infinite ease-in-out;
     }
-    /* Alerta parpadeante para tiempo transcurrido excedido */
     @keyframes pulse-alert {
       0%, 100% {
         opacity: 1;
@@ -96,7 +92,6 @@
     .alert-rojo {
       animation: pulse-alert 1.4s infinite ease-in-out;
     }
-    /* Resaltado suave de fila con tiempo en alerta */
     .row-time-alert {
       background-color: #fff1f2;
     }
@@ -121,15 +116,15 @@
               Comparador por Nº
             </span>
           </div>
-          <p class="text-xs text-slate-500 hidden sm:block">Pegado inteligente, control de tiempos operativos y consolidación automática</p>
+          <p class="text-xs text-slate-500 hidden sm:block">Pegado inteligente, control de tiempos operativos, bitácora y consolidación automática</p>
         </div>
       </div>
 
       <div class="flex items-center gap-2 sm:gap-2.5">
-        <span id="lastSavedBadge" class="hidden md:inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-100/90 border border-slate-200/70 px-3 py-1.5 rounded-xl">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Guardado automático activo
-        </span>
+        <button onclick="syncBitacoraFromGoogleSheet(true)" id="btnSyncSheet" title="Actualizar bitácora y registros completos desde Google Sheets" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-brand-50/70 border border-brand-200 rounded-xl hover:bg-brand-100 transition cursor-pointer">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-brand-600"></i>
+          <span class="hidden lg:inline">Sincronizar Bitácora</span>
+        </button>
 
         <button onclick="exportBaseWin()" class="inline-flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-semibold text-white bg-slate-900 border border-slate-900 rounded-xl hover:bg-slate-800 transition shadow-xs cursor-pointer">
           <i data-lucide="table-2" class="w-4 h-4 text-emerald-400"></i>
@@ -324,11 +319,9 @@
           <table class="w-full text-left border-collapse text-xs">
             <thead class="sticky top-0 z-20">
               <tr id="compNewTableHead" class="bg-emerald-50 text-emerald-950 border-b border-emerald-200 font-semibold">
-                <!-- 41 encabezados generados dinámicamente -->
               </tr>
             </thead>
             <tbody id="compNewTableBody" class="divide-y divide-emerald-100 bg-white">
-              <!-- Filas nuevas dinámicas con las 41 columnas -->
             </tbody>
           </table>
         </div>
@@ -364,7 +357,6 @@
 
     <!-- Tabla Principal (Base Consolidada) -->
     <section class="bg-white rounded-2xl border border-slate-200/90 shadow-[0_2px_10px_rgba(15,23,42,0.03)] overflow-hidden flex flex-col">
-      <!-- Barra de Herramientas y Filtros -->
       <div class="p-4 sm:p-5 border-b border-slate-200/80 bg-gradient-to-r from-slate-50/80 to-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div class="flex items-center gap-3">
           <span class="w-7 h-7 rounded-lg bg-slate-900 text-white text-xs font-extrabold flex items-center justify-center shadow-xs">2</span>
@@ -378,7 +370,7 @@
                 0 en alerta
               </span>
             </div>
-            <p class="text-xs text-slate-500">Las órdenes con tiempo excedido en alerta se priorizan arriba ordenadas por mayor tiempo transcurrido</p>
+            <p class="text-xs text-slate-500">Las órdenes con tiempo excedido en alerta se priorizan arriba; usa el ícono de acción junto a <strong>Nº</strong> para registrar estados o guardar el registro completo</p>
           </div>
         </div>
 
@@ -423,11 +415,9 @@
         <table class="w-full text-left border-collapse text-xs sm:text-[13px]">
           <thead class="bg-slate-100/95 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-20 backdrop-blur-xs">
             <tr id="masterTableHead">
-              <!-- Los 41 encabezados exactos + columna visual Tiempo Transcurrido + Ficha se inyectan aquí -->
             </tr>
           </thead>
           <tbody id="masterTableBody" class="divide-y divide-slate-200/80 bg-white">
-            <!-- Filas renderizadas por JS con las 41 columnas exactas + columna visual Tiempo Transcurrido -->
           </tbody>
         </table>
 
@@ -447,10 +437,8 @@
 
   <!-- Modal / Drawer Lateral de Detalle Completo de Orden -->
   <div id="detailModal" class="fixed inset-0 z-50 hidden">
-    <!-- Backdrop -->
     <div onclick="closeDetailModal()" class="fixed inset-0 bg-slate-900/45 backdrop-blur-[2px] transition-opacity"></div>
 
-    <!-- Panel Derecho -->
     <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col z-10 animate-fade-in">
       <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-4">
         <div>
@@ -467,13 +455,171 @@
       </div>
 
       <div id="modalBody" class="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
-        <!-- Contenido dinámico -->
       </div>
 
       <div class="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
         <span id="modalAddedMeta" class="text-xs text-slate-500"></span>
         <button onclick="closeDetailModal()" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer">
           Cerrar Detalle
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE ACCIÓN: CAMBIAR ESTADO Y GUARDAR REGISTRO COMPLETO -->
+  <div id="actionStatusModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeActionStatusModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden z-10 animate-fade-in">
+      <div class="px-6 py-4 bg-gradient-to-r from-brand-500 to-brand-600 text-white flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <i data-lucide="edit-3" class="w-5 h-5"></i>
+          <div>
+            <h3 class="text-base font-extrabold tracking-tight">Gestionar Estado de Orden</h3>
+            <p class="text-xs text-white/90">Guarda toda la fila/columnas y bitácora en Google Sheets</p>
+          </div>
+        </div>
+        <button onclick="closeActionStatusModal()" class="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="actionStatusForm" onsubmit="submitActionStatusForm(event)" class="p-6 space-y-4">
+        <!-- Datos de referencia exactos (solo lectura) -->
+        <div class="grid grid-cols-3 gap-2.5 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+          <div>
+            <span class="text-[10px] font-bold uppercase text-slate-400 block">ORDEN (Nº)</span>
+            <strong id="actOrdenDisplay" class="font-mono text-slate-900 text-sm">---</strong>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold uppercase text-slate-400 block">CÓDIGO</span>
+            <strong id="actCodigoDisplay" class="font-mono text-slate-900 text-sm">---</strong>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold uppercase text-slate-400 block">DNI / DOCUMENTO</span>
+            <strong id="actDniDisplay" class="font-mono text-brand-600 text-sm">---</strong>
+          </div>
+        </div>
+
+        <!-- Selector de Estado -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1.5">Seleccionar Estado *</label>
+          <select id="actEstadoSelect" onchange="handleActionEstadoChange()" required class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-sm font-bold text-slate-800 uppercase focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500">
+            <option value="COORDINADO">COORDINADO</option>
+            <option value="CANCELADO">CANCELADO</option>
+            <option value="AUSENTE">AUSENTE</option>
+            <option value="REPROGRAMA">REPROGRAMA</option>
+            <option value="EN CAMINO">EN CAMINO</option>
+            <option value="EN PROCESO">EN PROCESO</option>
+            <option value="ZONA PELIGROSA">ZONA PELIGROSA</option>
+            <option value="PLANTA">PLANTA</option>
+            <option value="DUPLICADO">DUPLICADO</option>
+            <option value="REITERATIVO">REITERATIVO</option>
+            <option value="RESCATE">RESCATE</option>
+            <option value="SIN FACILIDADES TÉCNICAS">SIN FACILIDADES TÉCNICAS</option>
+            <option value="REGESTION">REGESTION</option>
+            <option value="OTRO ESTADO">OTRO ESTADO</option>
+          </select>
+        </div>
+
+        <!-- Campo opcional si selecciona OTRO ESTADO -->
+        <div id="actCustomEstadoContainer" class="hidden">
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1.5">Especificar Estado (MAYÚSCULAS) *</label>
+          <input
+            type="text"
+            id="actCustomEstadoInput"
+            oninput="this.value = this.value.toUpperCase()"
+            placeholder="INGRESE EL ESTADO EN MAYÚSCULAS"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white text-sm font-semibold uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
+          />
+        </div>
+
+        <!-- Campos exclusivos para REPROGRAMA -->
+        <div id="actReprogramaFields" class="hidden grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-brand-50/60 border border-brand-200">
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1.5">Fecha Reprograma *</label>
+            <input
+              type="date"
+              id="actFechaReprograma"
+              class="w-full px-3 py-2 rounded-xl border border-brand-200 bg-white text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
+            />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase text-brand-800 mb-1.5">Tramo *</label>
+            <select
+              id="actTramoSelect"
+              class="w-full px-3 py-2 rounded-xl border border-brand-200 bg-white text-sm font-bold text-slate-800 uppercase focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
+            >
+              <option value="">SELECCIONAR TRAMO...</option>
+              <option value="AM (08:00 - 13:00)">AM (08:00 - 13:00)</option>
+              <option value="PM1 (13:00 - 16:00)">PM1 (13:00 - 16:00)</option>
+              <option value="PM2 (16:00 - 19:00)">PM2 (16:00 - 19:00)</option>
+              <option value="MAÑANA">MAÑANA</option>
+              <option value="TARDE">TARDE</option>
+              <option value="TODO EL DÍA">TODO EL DÍA</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Campo Observaciones (Automático en MAYÚSCULAS) -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-700 mb-1.5">Observaciones (MAYÚSCULAS) *</label>
+          <textarea
+            id="actObservaciones"
+            rows="3"
+            required
+            oninput="this.value = this.value.toUpperCase()"
+            placeholder="ESCRIBA EL MOTIVO O DETALLE EN MAYÚSCULAS..."
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white text-sm font-medium uppercase text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
+          ></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-between gap-3 border-t border-slate-200">
+          <span id="actTargetSheetBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800">
+            Hoja destino: REGISTROS_COMPLETOS
+          </span>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="closeActionStatusModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
+              Cancelar
+            </button>
+            <button type="submit" id="btnSaveActionStatus" class="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs sm:text-sm font-bold shadow-sm shadow-brand-500/30 transition cursor-pointer">
+              <i data-lucide="save" class="w-4 h-4"></i>
+              Guardar
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL DE BITÁCORA POR DOCUMENTO (DNI) CON VISTA COMPLETA IGUAL AL PANEL DERECHO -->
+  <div id="bitacoraModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeBitacoraModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden z-10 animate-fade-in">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div id="bitacoraIconHeader" class="w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0">
+            <i data-lucide="book-open-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-extrabold">Bitácora y Ficha Completa por Documento</h3>
+              <span id="bitacoraSourceBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white">REGISTROS_COMPLETOS</span>
+            </div>
+            <p id="bitacoraSubtitle" class="text-xs text-slate-300 mt-0.5 font-mono">DNI: ---</p>
+          </div>
+        </div>
+        <button onclick="closeBitacoraModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="bitacoraModalBody" class="p-6 overflow-y-auto space-y-5 bg-slate-50/70 flex-1 text-sm">
+      </div>
+
+      <div class="px-6 py-3.5 border-t border-slate-200 bg-white flex items-center justify-between">
+        <span id="bitacoraCountFooter" class="text-xs font-semibold text-slate-500">0 registros encontrados</span>
+        <button onclick="closeBitacoraModal()" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer">
+          Cerrar
         </button>
       </div>
     </div>
@@ -523,7 +669,6 @@
       </div>
 
       <div id="missingModalList" class="mt-4 max-h-56 overflow-y-auto space-y-2 bg-rose-50/70 border border-rose-200 rounded-xl p-3">
-        <!-- Lista dinámica de registros desaparecidos -->
       </div>
 
       <div class="mt-5 flex items-center justify-between gap-3">
@@ -540,15 +685,20 @@
     // CONFIGURACIÓN Y ESTADO DE LA APLICACIÓN
     // =========================================================================
     const STORAGE_KEY = 'sgi_ordenes_base_v2';
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzQY63v4Yaoh2kcUIcexLQpjsfPHIQB5N_4vwWYKHLYPqGZkfg38bm281vPTELPiw4M/exec';
 
-    let masterRecords = [];       // Lista principal acumulada
-    let pendingNewRecords = [];   // Registros nuevos detectados en el último pegado
-    let pendingOmitted = [];      // Registros existentes omitidos en el último pegado
-    let lastUpdatedStatuses = []; // Registros existentes cuyo Estado cambió en el último pegado
-    let lastMissingRecords = [];  // Registros que estaban en la base pero ya no figuran en el pegado actual
-    let lastBatchTime = null;     // Marca de tiempo de última incorporación
+    let masterRecords = [];
+    let pendingNewRecords = [];
+    let pendingOmitted = [];
+    let lastUpdatedStatuses = [];
+    let lastMissingRecords = [];
+    let lastBatchTime = null;
 
-    // Columnas oficiales exactas del sistema (41 columnas en orden estricto)
+    let bitacoraReprogramaList = [];
+    let bitacoraCanceladosList = [];
+    let fullSavedRecordsList = [];
+    let activeActionRecord = null;
+
     const EXPECTED_HEADERS = [
       'Nº', 'Cod Seguimiento Cliente', 'Número Documento', 'Estado', 'Cuadrilla',
       'Fecha Solicitud', 'País / Empresa', 'Cliente', 'Producto', 'Tipo Ubicación',
@@ -561,7 +711,6 @@
       'Suscripción', 'Historial de Estados', 'Email'
     ];
 
-    // Alias visuales SOLO para los encabezados de la Tabla Principal (no afecta exportación)
     const DISPLAY_HEADER_ALIASES = {
       'Cod Seguimiento Cliente': 'Cod Cliente',
       'Número Documento': 'Documento'
@@ -577,7 +726,8 @@
       refreshAllUI();
       lucide.createIcons();
 
-      // Actualizar dinámicamente el cálculo visual de Tiempo Transcurrido cada 15 segundos
+      syncBitacoraFromGoogleSheet(false);
+
       setInterval(() => {
         if (masterRecords.length > 0) {
           renderMasterTable();
@@ -585,14 +735,556 @@
       }, 15000);
     });
 
+    function getTodayDdMmYyyy() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+
+    function applySavedTodayStatesToMaster() {
+      const today = getTodayDdMmYyyy();
+      let changed = false;
+
+      // Buscar el último estado guardado del día en curso por Nº
+      const latestByOrderToday = new Map();
+
+      fullSavedRecordsList.forEach(row => {
+        const orderId = String(row['Nº'] || row['ORDEN'] || '').trim();
+        const savedEstado = String(row['ESTADO_GUARDADO'] || row['Estado'] || '').toUpperCase().trim();
+        const savedDay = String(row['FECHA_GUARDADO_DIA'] || '').trim();
+        if (orderId && savedEstado && savedDay === today) {
+          latestByOrderToday.set(orderId, {
+            estado: savedEstado,
+            savedDay,
+            fechaHora: String(row['FECHA_HORA_GUARDADO'] || ''),
+            observaciones: String(row['OBSERVACIONES'] || ''),
+            fechaReprograma: String(row['FECHA_REPROGRAMA'] || ''),
+            tramo: String(row['TRAMO'] || '')
+          });
+        }
+      });
+
+      masterRecords.forEach(rec => {
+        const orderId = String(rec['Nº'] || '').trim();
+        const info = latestByOrderToday.get(orderId);
+        if (info) {
+          rec._savedEstadoToday = info.estado;
+          rec._savedEstadoDate = info.savedDay;
+          rec._savedEstadoMeta = info;
+          if (String(rec['Estado'] || '').toUpperCase().trim() !== info.estado) {
+            rec['Estado'] = info.estado;
+            changed = true;
+          }
+        } else if (rec._savedEstadoDate && rec._savedEstadoDate !== today) {
+          delete rec._savedEstadoToday;
+          delete rec._savedEstadoDate;
+          delete rec._savedEstadoMeta;
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        saveToStorage();
+      }
+    }
+
+    // =========================================================================
+    // SINCRONIZACIÓN Y GUARDADO EN GOOGLE SHEETS
+    // =========================================================================
+    async function syncBitacoraFromGoogleSheet(showNotification = false) {
+      if (!GOOGLE_SCRIPT_URL) return;
+
+      const btn = document.getElementById('btnSyncSheet');
+      if (btn) btn.classList.add('opacity-60', 'pointer-events-none');
+
+      try {
+        const res = await fetch(GOOGLE_SCRIPT_URL, { method: 'GET' });
+        const data = await res.json();
+        if (data && data.ok) {
+          bitacoraReprogramaList = Array.isArray(data.reprogramas) ? data.reprogramas : [];
+          bitacoraCanceladosList = Array.isArray(data.cancelados) ? data.cancelados : [];
+          fullSavedRecordsList = Array.isArray(data.fullRecords) ? data.fullRecords : [];
+          applySavedTodayStatesToMaster();
+          refreshAllUI();
+          if (showNotification) {
+            showToast(`Sincronizado: ${fullSavedRecordsList.length} completos, ${bitacoraReprogramaList.length} REPROGRAMA, ${bitacoraCanceladosList.length} CANCELADOS.`, 'success');
+          }
+        } else {
+          throw new Error((data && data.error) || 'Respuesta inválida de Google Sheets');
+        }
+      } catch (err) {
+        console.error('Error sincronizando bitácora:', err);
+        if (showNotification) {
+          showToast('Error al sincronizar con Google Sheets: ' + err.message, 'error');
+        }
+      } finally {
+        if (btn) btn.classList.remove('opacity-60', 'pointer-events-none');
+      }
+    }
+
+    function normalizeExactDni(val) {
+      if (val === null || val === undefined) return '';
+      return String(val).replace(/^'+/, '').trim();
+    }
+
+    function findBitacoraMatchesForDni(dniRaw) {
+      const targetDni = normalizeExactDni(dniRaw);
+      if (!targetDni) return null;
+
+      const matchesFull = fullSavedRecordsList.filter(row => {
+        const rowDni = normalizeExactDni(row['Número Documento'] || row['DNI'] || row['DOCUMENTO']);
+        return rowDni !== '' && rowDni === targetDni;
+      });
+
+      if (matchesFull.length > 0) {
+        return {
+          source: 'REGISTROS_COMPLETOS',
+          rows: matchesFull
+        };
+      }
+
+      const matchesReprograma = bitacoraReprogramaList.filter(row => {
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO']);
+        return rowDni !== '' && rowDni === targetDni;
+      });
+
+      if (matchesReprograma.length > 0) {
+        return {
+          source: 'REPROGRAMA',
+          rows: matchesReprograma
+        };
+      }
+
+      const matchesCancelados = bitacoraCanceladosList.filter(row => {
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO']);
+        return rowDni !== '' && rowDni === targetDni;
+      });
+
+      if (matchesCancelados.length > 0) {
+        return {
+          source: 'CANCELADOS',
+          rows: matchesCancelados
+        };
+      }
+
+      return null;
+    }
+
+    // Construye el mismo desglose del panel lateral derecho para cualquier registro (guardado o en memoria)
+    function buildDetailPanelHtml(rec) {
+      const historyItems = (rec['Historial de Estados'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const subItems = (rec['Suscripción'] || '')
+        .split('|')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const techItems = (rec['Datos Técnicos'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const dil = calculateDilacion(rec);
+
+      const extraSavedInfo = (rec['ESTADO_GUARDADO'] || rec['FECHA_HORA_GUARDADO'] || rec['OBSERVACIONES'] || rec['FECHA_REPROGRAMA'] || rec['TRAMO'])
+        ? `
+          <div class="bg-brand-50/70 rounded-xl p-4 border border-brand-200 space-y-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+              <i data-lucide="bookmark-check" class="w-4 h-4"></i> Registro Guardado en Google Sheets
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              ${rec['ESTADO_GUARDADO'] ? `<div><span class="text-slate-500 block">Estado Guardado</span><strong class="text-slate-900">${escapeHtml(rec['ESTADO_GUARDADO'])}</strong></div>` : ''}
+              ${rec['FECHA_HORA_GUARDADO'] ? `<div><span class="text-slate-500 block">Fecha y Hora Guardado</span><span class="font-mono text-slate-800">${escapeHtml(rec['FECHA_HORA_GUARDADO'])}</span></div>` : ''}
+              ${rec['FECHA_REPROGRAMA'] ? `<div><span class="text-slate-500 block">Fecha Reprograma</span><strong class="text-slate-900">${escapeHtml(rec['FECHA_REPROGRAMA'])}</strong></div>` : ''}
+              ${rec['TRAMO'] ? `<div><span class="text-slate-500 block">Tramo</span><strong class="text-slate-900">${escapeHtml(rec['TRAMO'])}</strong></div>` : ''}
+              ${rec['OBSERVACIONES'] ? `<div class="sm:col-span-2"><span class="text-slate-500 block">Observaciones</span><strong class="text-slate-900">${escapeHtml(rec['OBSERVACIONES'])}</strong></div>` : ''}
+            </div>
+          </div>
+        `
+        : '';
+
+      return `
+        ${extraSavedInfo}
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1.5">
+            <i data-lucide="truck" class="w-4 h-4"></i> Asignación y Agenda
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Cuadrilla Asignada</span><strong class="text-slate-900">${escapeHtml(rec['Cuadrilla'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Visita</span><strong class="text-slate-900">${escapeHtml(rec['Fecha Visita'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Solicitud</span><span class="text-slate-800">${escapeHtml(rec['Fecha Solicitud'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Tiempo Transcurrido</span><span class="px-2.5 py-0.5 rounded-lg text-[11px] border ${dil.badgeCls} inline-block font-mono mt-0.5">${dil.texto}</span></div>
+            <div><span class="text-slate-500 block">Prioridad / Tipo Trabajo</span><span class="text-slate-800">${escapeHtml(rec['Prioridad'] || '-')} • ${escapeHtml(rec['Tipo Trabajo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Cod. Seguimiento Cliente</span><span class="font-mono text-slate-800">${escapeHtml(rec['Cod Seguimiento Cliente'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Código De Seguimiento</span><span class="font-mono text-slate-800">${escapeHtml(rec['Código De Seguimiento'] || '-')}</span></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="map-pin" class="w-4 h-4 text-brand-500"></i> Ubicación y Contacto
+            </h4>
+            ${(rec['Georeferencia'] || rec['Cod Seguimiento Cliente'] || rec['Nº']) ? `
+              <a href="${buildMapaTecnicosProvinciaUrl(rec)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
+                Abrir en Mapa <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              </a>
+            ` : ''}
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Teléfono Móvil</span><strong class="text-slate-900 font-mono">${escapeHtml(rec['Móvil'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Teléfono Fijo</span><span class="text-slate-800 font-mono">${escapeHtml(rec['Fijo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Sector Operativo</span><span class="text-slate-800">${escapeHtml(rec['Sector Operativo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Localidad / Región</span><span class="text-slate-800">${escapeHtml(rec['Localidad'] || '-')} (${escapeHtml(rec['Región / Zona'] || '-')})</span></div>
+            <div class="sm:col-span-2"><span class="text-slate-500 block">Dirección Completa</span><strong class="text-slate-900">${escapeHtml(rec['Dirección'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Georeferencia</span><span class="font-mono text-slate-700">${escapeHtml(rec['Georeferencia'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Proveedor / Proyecto</span><span class="text-slate-800">${escapeHtml(rec['Proveedeor'] || '-')} (ID: ${escapeHtml(rec['Id de Proyecto'] || '-')})</span></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="wifi" class="w-4 h-4 text-brand-500"></i> Suscripción y Servicios
+          </h4>
+          ${subItems.length > 0 ? `
+            <div class="flex flex-wrap gap-2">
+              ${subItems.map(item => `<span class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 text-xs font-medium">${escapeHtml(item)}</span>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin detalles de suscripción</p>'}
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-4 h-4 text-brand-500"></i> Datos Técnicos (CTOs)
+          </h4>
+          ${techItems.length > 0 ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-mono bg-slate-50 p-3 rounded-lg border border-slate-200">
+              ${techItems.map(t => `<div class="text-slate-700 truncate" title="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin datos técnicos registrados</p>'}
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="history" class="w-4 h-4 text-brand-500"></i> Historial de Estados
+          </h4>
+          ${historyItems.length > 0 ? `
+            <ul class="space-y-2 text-xs">
+              ${historyItems.map(h => `
+                <li class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 leading-relaxed">
+                  ${escapeHtml(h)}
+                </li>
+              `).join('')}
+            </ul>
+          ` : '<p class="text-xs text-slate-400">Sin historial disponible</p>'}
+        </div>
+      `;
+    }
+
+    function openBitacoraModal(dniRaw) {
+      const targetDni = normalizeExactDni(dniRaw);
+      const matchData = findBitacoraMatchesForDni(targetDni);
+      if (!matchData) return;
+
+      const isFull = matchData.source === 'REGISTROS_COMPLETOS';
+      const isReprog = matchData.source === 'REPROGRAMA';
+      const badge = document.getElementById('bitacoraSourceBadge');
+      const iconHeader = document.getElementById('bitacoraIconHeader');
+
+      badge.textContent = `HOJA: ${matchData.source}`;
+      badge.className = (isFull || isReprog)
+        ? 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white'
+        : 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-600 text-white';
+
+      iconHeader.className = (isFull || isReprog)
+        ? 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0'
+        : 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0';
+
+      document.getElementById('bitacoraSubtitle').textContent = `DOCUMENTO / DNI: ${targetDni}`;
+      document.getElementById('bitacoraCountFooter').textContent =
+        `${matchData.rows.length} registro${matchData.rows.length === 1 ? '' : 's'} encontrado${matchData.rows.length === 1 ? '' : 's'} en ${matchData.source}`;
+
+      const body = document.getElementById('bitacoraModalBody');
+      body.innerHTML = matchData.rows.map((row, index) => {
+        if (isFull || row['Cliente'] || row['Dirección'] || row['Suscripción']) {
+          return `
+            <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-extrabold uppercase text-brand-600">Orden Nº ${escapeHtml(row['Nº'] || row['ORDEN'] || '—')}</span>
+                  ${renderStatusBadge(row['ESTADO_GUARDADO'] || row['Estado'] || '')}
+                </div>
+                <span class="text-xs font-semibold text-slate-600">${escapeHtml(row['Cliente'] || '')}</span>
+              </div>
+              ${buildDetailPanelHtml(row)}
+            </div>
+          `;
+        }
+
+        const entries = Object.entries(row);
+        return `
+          <div class="bg-white rounded-xl border ${isReprog ? 'border-brand-200' : 'border-rose-200'} p-4 shadow-2xs space-y-2.5">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-extrabold uppercase ${isReprog ? 'text-brand-600' : 'text-rose-600'}">
+                Registro #${index + 1} • ${escapeHtml(row['ESTADO'] || matchData.source)}
+              </span>
+              <span class="text-[11px] font-mono text-slate-500">
+                ${escapeHtml(row['FECHA Y HORA GUARDADO'] || '')}
+              </span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+              ${entries.map(([key, val]) => `
+                <div class="bg-slate-50/90 rounded-lg px-2.5 py-1.5 border border-slate-200/70 ${key === 'OBSERVACIONES' ? 'sm:col-span-2 lg:col-span-3' : ''}">
+                  <span class="text-[10px] font-bold uppercase text-slate-400 block">${escapeHtml(key)}</span>
+                  <strong class="text-slate-900 font-mono break-words">${escapeHtml(val || '—')}</strong>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      const modal = document.getElementById('bitacoraModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeBitacoraModal() {
+      const modal = document.getElementById('bitacoraModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    // =========================================================================
+    // MODAL DE ACCIÓN (CAMBIAR ESTADO Y GUARDAR REGISTRO COMPLETO)
+    // =========================================================================
+    function openActionStatusModal(orderNumber) {
+      const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
+      if (!rec) return;
+
+      activeActionRecord = rec;
+
+      const ordenExacta = String(rec['Nº'] || '').trim();
+      const codigoExacto = String(rec['Cod Seguimiento Cliente'] || '').trim();
+      const dniExacto = normalizeExactDni(rec['Número Documento']);
+
+      document.getElementById('actOrdenDisplay').textContent = ordenExacta || '—';
+      document.getElementById('actCodigoDisplay').textContent = codigoExacto || '—';
+      document.getElementById('actDniDisplay').textContent = dniExacto || '—';
+
+      const selectEl = document.getElementById('actEstadoSelect');
+      const currentUpper = String(rec['Estado'] || '').toUpperCase().trim();
+      const hasOption = Array.from(selectEl.options).some(opt => opt.value === currentUpper);
+      selectEl.value = hasOption ? currentUpper : 'COORDINADO';
+
+      document.getElementById('actCustomEstadoInput').value = '';
+      document.getElementById('actFechaReprograma').value = '';
+      document.getElementById('actTramoSelect').value = '';
+      document.getElementById('actObservaciones').value = '';
+
+      handleActionEstadoChange();
+
+      const modal = document.getElementById('actionStatusModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeActionStatusModal() {
+      const modal = document.getElementById('actionStatusModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      activeActionRecord = null;
+    }
+
+    function handleActionEstadoChange() {
+      const selected = document.getElementById('actEstadoSelect').value;
+      const isReprograma = selected === 'REPROGRAMA';
+      const isOtro = selected === 'OTRO ESTADO';
+
+      const reprogFields = document.getElementById('actReprogramaFields');
+      const fechaInput = document.getElementById('actFechaReprograma');
+      const tramoSelect = document.getElementById('actTramoSelect');
+      const customContainer = document.getElementById('actCustomEstadoContainer');
+      const customInput = document.getElementById('actCustomEstadoInput');
+      const targetBadge = document.getElementById('actTargetSheetBadge');
+
+      if (isReprograma) {
+        reprogFields.classList.remove('hidden');
+        reprogFields.classList.add('grid');
+        fechaInput.required = true;
+        tramoSelect.required = true;
+      } else {
+        reprogFields.classList.add('hidden');
+        reprogFields.classList.remove('grid');
+        fechaInput.required = false;
+        tramoSelect.required = false;
+      }
+
+      if (selected === 'REPROGRAMA') {
+        targetBadge.textContent = 'Guarda registro completo + REPROGRAMA';
+        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800';
+      } else if (selected === 'CANCELADO') {
+        targetBadge.textContent = 'Guarda registro completo + CANCELADOS';
+        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800';
+      } else {
+        targetBadge.textContent = 'Guarda registro completo + Estado del día';
+        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800';
+      }
+
+      if (isOtro) {
+        customContainer.classList.remove('hidden');
+        customInput.required = true;
+      } else {
+        customContainer.classList.add('hidden');
+        customInput.required = false;
+      }
+    }
+
+    function formatDateToDdMmYyyy(isoDate) {
+      if (!isoDate) return '';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    function formatPeruDateTimeNow() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    async function submitActionStatusForm(event) {
+      event.preventDefault();
+      if (!activeActionRecord) return;
+
+      const selected = document.getElementById('actEstadoSelect').value;
+      const finalEstado = (selected === 'OTRO ESTADO'
+        ? document.getElementById('actCustomEstadoInput').value
+        : selected).toUpperCase().trim();
+
+      if (!finalEstado) {
+        showToast('Debes ingresar el estado en mayúsculas.', 'warning');
+        return;
+      }
+
+      const isReprograma = finalEstado === 'REPROGRAMA';
+      const fechaReprogramaRaw = document.getElementById('actFechaReprograma').value;
+      const fechaReprogramaFormatted = isReprograma ? formatDateToDdMmYyyy(fechaReprogramaRaw) : '';
+      const tramoUpper = isReprograma ? document.getElementById('actTramoSelect').value.toUpperCase().trim() : '';
+      const observacionesUpper = document.getElementById('actObservaciones').value.toUpperCase().trim();
+      const fechaHoraGuardado = formatPeruDateTimeNow();
+      const fechaGuardadoDia = getTodayDdMmYyyy();
+
+      const ordenStr = String(activeActionRecord['Nº'] || '').trim();
+      const codigoStr = String(activeActionRecord['Cod Seguimiento Cliente'] || '').trim();
+      const dniStr = normalizeExactDni(activeActionRecord['Número Documento']);
+
+      // Toda la fila y todas sus columnas (EXPECTED_HEADERS)
+      const fullRecordPayload = {};
+      EXPECTED_HEADERS.forEach(h => {
+        fullRecordPayload[h] = h === 'Estado' ? finalEstado : String(activeActionRecord[h] || '');
+      });
+
+      const payload = {
+        orden: ordenStr,
+        codigo: codigoStr,
+        dni: dniStr,
+        estado: finalEstado,
+        fechaReprograma: fechaReprogramaFormatted,
+        tramo: tramoUpper,
+        observaciones: observacionesUpper,
+        fechaHoraGuardado: fechaHoraGuardado,
+        fechaGuardadoDia: fechaGuardadoDia,
+        fullRecord: fullRecordPayload
+      };
+
+      const btnSave = document.getElementById('btnSaveActionStatus');
+      const prevBtnHtml = btnSave.innerHTML;
+      btnSave.disabled = true;
+      btnSave.innerHTML = 'Guardando...';
+
+      try {
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (!result || !result.ok) {
+          throw new Error((result && result.error) || 'No se pudo confirmar el guardado en Google Sheets');
+        }
+
+        // Persistir en el registro de la Tabla Principal para el día en curso
+        activeActionRecord['Estado'] = finalEstado;
+        activeActionRecord._savedEstadoToday = finalEstado;
+        activeActionRecord._savedEstadoDate = fechaGuardadoDia;
+        activeActionRecord._updatedAt = fechaHoraGuardado;
+        saveToStorage();
+
+        // Actualizar en memoria local
+        fullSavedRecordsList.push({
+          ...fullRecordPayload,
+          'ESTADO_GUARDADO': finalEstado,
+          'FECHA_GUARDADO_DIA': fechaGuardadoDia,
+          'FECHA_HORA_GUARDADO': fechaHoraGuardado,
+          'FECHA_REPROGRAMA': fechaReprogramaFormatted,
+          'TRAMO': tramoUpper,
+          'OBSERVACIONES': observacionesUpper
+        });
+
+        if (isReprograma) {
+          bitacoraReprogramaList.push({
+            'ORDEN': ordenStr,
+            'CODIGO': codigoStr,
+            'DNI': dniStr,
+            'ESTADO': finalEstado,
+            'FECHA REPROGRAMA': fechaReprogramaFormatted,
+            'TRAMO': tramoUpper,
+            'OBSERVACIONES': observacionesUpper,
+            'FECHA Y HORA GUARDADO': fechaHoraGuardado
+          });
+        } else if (finalEstado === 'CANCELADO') {
+          bitacoraCanceladosList.push({
+            'ORDEN': ordenStr,
+            'CODIGO': codigoStr,
+            'DNI': dniStr,
+            'ESTADO': finalEstado,
+            'OBSERVACIONES': observacionesUpper,
+            'FECHA Y HORA GUARDADO': fechaHoraGuardado
+          });
+        }
+
+        closeActionStatusModal();
+        refreshAllUI();
+        showToast(`¡Guardado! Estado ${finalEstado} activo en tabla y registro completo enviado a Google Sheets.`, 'success');
+      } catch (err) {
+        console.error('Error guardando en Google Sheets:', err);
+        showToast('Error al guardar en Google Sheets: ' + err.message, 'error');
+      } finally {
+        btnSave.disabled = false;
+        btnSave.innerHTML = prevBtnHtml;
+        lucide.createIcons();
+      }
+    }
+
+    // =========================================================================
+    // ENCABEZADOS DE TABLA (ACCIÓN ANTES DE Nº, SOLO ÍCONO)
+    // =========================================================================
     function renderTableHeaders() {
-      // Encabezados para la tabla principal (41 columnas exactas + columna visual Tiempo Transcurrido + Ficha)
       const masterHead = document.getElementById('masterTableHead');
-      masterHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
+      const actionHeaderHtml = `<th class="py-3.5 px-2.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 text-center text-slate-800" title="Acción"></th>`;
+
+      masterHead.innerHTML = actionHeaderHtml + EXPECTED_HEADERS.map((header, idx) => {
         const displayLabel = DISPLAY_HEADER_ALIASES[header] || header;
 
         if (idx === 0) {
-          return `<th class="py-3.5 px-3.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] text-slate-800">${escapeHtml(displayLabel)}</th>`;
+          return `<th class="py-3.5 px-3.5 whitespace-nowrap sticky left-[42px] z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] text-slate-800">${escapeHtml(displayLabel)}</th>`;
         }
         if (header === 'Estado') {
           return `<th class="py-3.5 px-3.5 whitespace-nowrap text-slate-800">${escapeHtml(displayLabel)}</th><th class="py-3.5 px-3.5 whitespace-nowrap text-brand-600" title="Indicador visual en web (En camino límite 40m / En proceso límite 2h)">Duración</th>`;
@@ -603,7 +1295,6 @@
         return `<th class="py-3.5 px-3.5 whitespace-nowrap ${minWidthClass}">${escapeHtml(displayLabel)}</th>`;
       }).join('') + `<th class="py-3.5 px-3.5 whitespace-nowrap text-right">Ficha</th>`;
 
-      // Encabezados para la tabla de comparación de nuevos (41 columnas exactas)
       const compHead = document.getElementById('compNewTableHead');
       compHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
         if (idx === 0) {
@@ -726,9 +1417,6 @@
       const ahora = new Date();
       const deltaMin = Math.max(0, (ahora - fechaRef) / 60000);
       const transcurridoTexto = formatoHM(deltaMin);
-
-      // En camino: límite 40 min (preventivo desde 30 min)
-      // En proceso / Iniciada: límite 2 horas = 120 min (preventivo desde 90 min)
       const [umbralAmarillo, umbralRojo] = isEnCamino ? [30, 40] : [90, 120];
 
       if (deltaMin > umbralRojo) {
@@ -767,13 +1455,11 @@
       const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const lines = normalized.split('\n');
 
-      // Caso 0: Formato estructurado "Tabla de seguimiento de cliente"
       const followUpRecords = parseFollowUpTableFormat(normalized);
       if (followUpRecords.length > 0) {
         return followUpRecords;
       }
 
-      // Detectar formato TSV tabular
       const nonEmptyLines = lines.filter(l => l.trim().length > 0);
       const tsvDataLines = nonEmptyLines.filter(l => {
         const parts = l.split('\t');
@@ -785,7 +1471,6 @@
         return parseTsvFormat(nonEmptyLines);
       }
 
-      // Caso principal: Formato bloque multi-línea copiado desde tabla HTML web SGI
       return parseMultilineSgiFormat(lines);
     }
 
@@ -1251,7 +1936,7 @@
     }
 
     // =========================================================================
-    // FLUJO PRINCIPAL DE PROCESAMIENTO Y COMPARACIÓN
+    // FLUJO PRINCIPAL DE PROCESAMIENTO Y COMPARACIÓN (CON REGLA COORDINADO)
     // =========================================================================
     function processPastedData() {
       const textarea = document.getElementById('pasteInput');
@@ -1278,8 +1963,8 @@
         }
       }
       const incomingRecords = Array.from(uniqueIncomingMap.values());
+      const todayStr = getTodayDdMmYyyy();
 
-      // ESCENARIO 1: Base Principal vacía -> Carga directa inicial
       if (masterRecords.length === 0) {
         const now = formatNow();
         masterRecords = incomingRecords.map(r => ({
@@ -1289,15 +1974,16 @@
         }));
         lastBatchTime = now;
 
+        applySavedTodayStatesToMaster();
         saveToStorage();
         clearTextarea();
         dismissComparison();
         refreshAllUI(0);
+        syncBitacoraFromGoogleSheet(false);
         showToast(`¡Listo! Se cargaron ${incomingRecords.length} registros iniciales en la Base Principal.`, 'success');
         return;
       }
 
-      // ESCENARIO 2: Ya existen registros -> Comparar por primera columna "Nº"
       const masterById = new Map(masterRecords.map(r => [String(r['Nº']).trim(), r]));
 
       const newOnes = [];
@@ -1313,6 +1999,23 @@
           if (existingRec._missingInMegalogic) {
             existingRec._missingInMegalogic = false;
             delete existingRec._missingDetectedAt;
+          }
+
+          const hasCoordinadoToday =
+            String(existingRec._savedEstadoToday || '').toUpperCase().trim() === 'COORDINADO' &&
+            existingRec._savedEstadoDate === todayStr;
+
+          const incomingEstadoUpper = String(rec['Estado'] || '').toUpperCase().trim();
+          const incomingIsAgendada = incomingEstadoUpper === 'AGENDADA';
+
+          // Si el estado guardado del día es COORDINADO y viene como AGENDADA, mantener COORDINADO
+          if (hasCoordinadoToday && incomingIsAgendada) {
+            rec['Estado'] = 'COORDINADO';
+          } else if (hasCoordinadoToday && !incomingIsAgendada) {
+            // Si al pegar viene diferente a AGENDADA, permitir que cambie y limpiar marca de COORDINADO
+            delete existingRec._savedEstadoToday;
+            delete existingRec._savedEstadoDate;
+            delete existingRec._savedEstadoMeta;
           }
 
           const prevEstado = (existingRec['Estado'] || '').trim();
@@ -1354,7 +2057,6 @@
         }
       }
 
-      // Detectar registros de la Tabla Principal que desaparecieron en esta carga
       const missingNow = [];
       const nowAlertTime = formatNow();
       for (const mRec of masterRecords) {
@@ -1377,6 +2079,8 @@
         saveToStorage();
         refreshAllUI();
       }
+
+      syncBitacoraFromGoogleSheet(false);
 
       if (updatedRecordsInfo.length > 0) {
         showToast(
@@ -1520,10 +2224,13 @@
       masterRecords = [...formattedNew, ...masterRecords];
       lastBatchTime = now;
 
+      applySavedTodayStatesToMaster();
       saveToStorage();
       clearTextarea();
       dismissComparison();
       refreshAllUI(addedCount);
+
+      syncBitacoraFromGoogleSheet(false);
 
       showToast(`¡${addedCount} registro${addedCount === 1 ? '' : 's'} nuevo${addedCount === 1 ? '' : 's'} agregado${addedCount === 1 ? '' : 's'} a la Base Principal!`, 'success');
     }
@@ -1572,7 +2279,7 @@
     }
 
     // =========================================================================
-    // RENDERIZADO DE TABLA PRINCIPAL Y KPIs (ORDENADA POR ALERTAS DE TIEMPO)
+    // RENDERIZADO DE TABLA PRINCIPAL Y KPIs
     // =========================================================================
     function refreshAllUI(lastAddedCount = null) {
       updateKPIs(lastAddedCount);
@@ -1631,6 +2338,7 @@
       const selectedCuadrilla = document.getElementById('filterCuadrilla').value;
       const selectedEstado = document.getElementById('filterEstado').value;
       const onlyRecent = document.getElementById('filterOnlyRecent').checked;
+      const todayStr = getTodayDdMmYyyy();
 
       const filtered = masterRecords.filter(rec => {
         if (selectedCuadrilla && rec['Cuadrilla'] !== selectedCuadrilla) return false;
@@ -1655,9 +2363,6 @@
         return true;
       });
 
-      // Calcular dilación y ordenar:
-      // 1) Registros con alerta activa (En camino > 40m o En proceso/Iniciada > 2h) primero, ordenados de mayor a menor tiempo transcurrido
-      // 2) Luego el resto conservando su orden natural
       const enriched = filtered.map((rec, originalIdx) => ({
         rec,
         dil: calculateDilacion(rec),
@@ -1694,7 +2399,7 @@
       if (enriched.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="${EXPECTED_HEADERS.length + 2}" class="py-10 text-center text-slate-500 text-sm">
+            <td colspan="${EXPECTED_HEADERS.length + 3}" class="py-10 text-center text-slate-500 text-sm">
               No se encontraron órdenes que coincidan con los filtros aplicados.
             </td>
           </tr>
@@ -1706,6 +2411,7 @@
         const isRecent = Boolean(rec._isRecent);
         const isMissing = Boolean(rec._missingInMegalogic);
         const isTimeAlert = Boolean(dil.isAlert);
+        const isSavedToday = Boolean(rec._savedEstadoToday && rec._savedEstadoDate === todayStr);
 
         const rowBg = isMissing
           ? 'row-missing-alert'
@@ -1719,13 +2425,21 @@
               ? 'bg-[#FFF1F2]'
               : (isRecent ? 'bg-[#FFF8F4]' : 'bg-white'));
 
+        const actionCellHtml = `
+          <td class="py-3 px-2.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing || isTimeAlert ? 'border-rose-300' : 'border-slate-200'} text-center">
+            <button type="button" onclick="event.stopPropagation(); openActionStatusModal('${escapeHtml(rec['Nº'])}')" class="inline-flex items-center justify-center w-7 h-7 rounded-lg text-white bg-brand-500 hover:bg-brand-600 transition shadow-2xs cursor-pointer" title="Cambiar estado / Guardar registro completo">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+
         const cellsHtml = EXPECTED_HEADERS.map((header, idx) => {
           const val = rec[header] || '';
 
           if (idx === 0) {
             const wasUpdated = Boolean(rec._updatedAt && Array.isArray(rec._changedFields) && rec._changedFields.length > 0);
             return `
-              <td class="py-3 px-3.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing || isTimeAlert ? 'border-rose-300' : 'border-slate-200'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+              <td class="py-3 px-3.5 whitespace-nowrap sticky left-[42px] z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing || isTimeAlert ? 'border-rose-300' : 'border-slate-200'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                 <div class="flex items-center gap-2">
                   <span class="font-bold ${isMissing || isTimeAlert ? 'text-rose-800' : 'text-slate-900'}">${escapeHtml(val)}</span>
                   ${isMissing ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-600 text-white animate-pulse" title="Alerta: este registro ya no figura en el sistema Megalogic (detectado ${escapeHtml(rec._missingDetectedAt || '')})">OT NO FIGURA</span>` : ''}
@@ -1736,11 +2450,38 @@
             `;
           }
 
+          if (header === 'Número Documento') {
+            const bitacoraMatch = findBitacoraMatchesForDni(val);
+            const bitacoraBtn = bitacoraMatch
+              ? (bitacoraMatch.source === 'CANCELADOS'
+                  ? `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver ficha completa y bitácora (${bitacoraMatch.rows.length})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs transition cursor-pointer">
+                       <i data-lucide="file-warning" class="w-3 h-3"></i>
+                       <span>${bitacoraMatch.rows.length}</span>
+                     </button>`
+                  : `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver ficha completa y bitácora (${bitacoraMatch.rows.length})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-brand-500 text-white hover:bg-brand-600 shadow-2xs transition cursor-pointer">
+                       <i data-lucide="history" class="w-3 h-3"></i>
+                       <span>${bitacoraMatch.rows.length}</span>
+                     </button>`)
+              : '';
+
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap font-mono text-slate-800">
+                <div class="inline-flex items-center gap-1.5">
+                  <span>${escapeHtml(val)}</span>
+                  ${bitacoraBtn}
+                </div>
+              </td>
+            `;
+          }
+
           if (header === 'Estado') {
-            const statusChangeHint = rec._statusUpdatedAt && rec._prevEstado
+            const todayTag = isSavedToday
+              ? `<span class="block text-[10px] font-bold text-brand-600 mt-1" title="Guardado hoy ${escapeHtml(todayStr)}">HOY: ${escapeHtml(todayStr)}</span>`
+              : '';
+            const statusChangeHint = !isSavedToday && rec._statusUpdatedAt && rec._prevEstado
               ? `<span class="block text-[10px] font-medium text-slate-500 mt-1" title="Actualizado a las ${escapeHtml(rec._statusUpdatedAt)}">Antes: ${escapeHtml(rec._prevEstado.toUpperCase())}</span>`
               : '';
-            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}${statusChangeHint}</td><td class="py-3 px-3.5 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg text-[11px] border ${dil.badgeCls} inline-flex items-center gap-1 font-mono whitespace-nowrap" title="Indicador visual basado en Fecha Estado (${escapeHtml(rec['Fecha Estado'] || '-')})">${dil.texto}</span></td>`;
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}${todayTag}${statusChangeHint}</td><td class="py-3 px-3.5 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg text-[11px] border ${dil.badgeCls} inline-flex items-center gap-1 font-mono whitespace-nowrap" title="Indicador visual basado en Fecha Estado (${escapeHtml(rec['Fecha Estado'] || '-')})">${dil.texto}</span></td>`;
           }
 
           if (header === 'Prioridad') {
@@ -1771,6 +2512,7 @@
 
         return `
           <tr onclick="openDetailModal('${escapeHtml(rec['Nº'])}')" class="${rowBg} transition cursor-pointer group">
+            ${actionCellHtml}
             ${cellsHtml}
             <td class="py-3 px-3.5 whitespace-nowrap text-right">
               <button type="button" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 group-hover:bg-brand-500 group-hover:text-white transition shadow-2xs">
@@ -1785,12 +2527,21 @@
     }
 
     // =========================================================================
-    // DISEÑO IMPRESIONANTE DE ESTADOS (BADGES MODERNOS DE ALTO IMPACTO)
+    // DISEÑO DE ESTADOS (BADGES MODERNOS)
     // =========================================================================
     function renderStatusBadge(status) {
       const s = (status || '').trim();
       const upper = s.toUpperCase();
       const lower = s.toLowerCase();
+
+      if (upper === 'COORDINADO') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-brand-50 text-brand-700 border border-brand-300 shadow-2xs">
+            <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
 
       if (lower === 'en camino') {
         return `
@@ -1849,7 +2600,7 @@
         `;
       }
 
-      if (lower.includes('cancel') || lower.includes('anulad') || lower.includes('suspend')) {
+      if (lower.includes('cancel') || lower.includes('anulad') || lower.includes('suspend') || upper === 'AUSENTE' || upper === 'ZONA PELIGROSA') {
         return `
           <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
             <span class="w-2 h-2 rounded-full bg-rose-600"></span>
@@ -1917,99 +2668,8 @@
       document.getElementById('modalOrderClient').textContent = `${rec['Cliente'] || 'Cliente'} • DNI/Doc: ${rec['Número Documento'] || '-'}`;
       document.getElementById('modalAddedMeta').textContent = rec._addedAt ? `Incorporado a la base: ${rec._addedAt}` : '';
 
-      const historyItems = (rec['Historial de Estados'] || '')
-        .split(';')
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      const subItems = (rec['Suscripción'] || '')
-        .split('|')
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      const techItems = (rec['Datos Técnicos'] || '')
-        .split(';')
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      const dil = calculateDilacion(rec);
-
       const modalBody = document.getElementById('modalBody');
-      modalBody.innerHTML = `
-        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1.5">
-            <i data-lucide="truck" class="w-4 h-4"></i> Asignación y Agenda
-          </h4>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div><span class="text-slate-500 block">Cuadrilla Asignada</span><strong class="text-slate-900">${escapeHtml(rec['Cuadrilla'] || '-')}</strong></div>
-            <div><span class="text-slate-500 block">Fecha Visita</span><strong class="text-slate-900">${escapeHtml(rec['Fecha Visita'] || '-')}</strong></div>
-            <div><span class="text-slate-500 block">Fecha Solicitud</span><span class="text-slate-800">${escapeHtml(rec['Fecha Solicitud'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Tiempo Transcurrido</span><span class="px-2.5 py-0.5 rounded-lg text-[11px] border ${dil.badgeCls} inline-block font-mono mt-0.5">${dil.texto}</span></div>
-            <div><span class="text-slate-500 block">Prioridad / Tipo Trabajo</span><span class="text-slate-800">${escapeHtml(rec['Prioridad'] || '-')} • ${escapeHtml(rec['Tipo Trabajo'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Cod. Seguimiento Cliente</span><span class="font-mono text-slate-800">${escapeHtml(rec['Cod Seguimiento Cliente'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Código De Seguimiento</span><span class="font-mono text-slate-800">${escapeHtml(rec['Código De Seguimiento'] || '-')}</span></div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
-          <div class="flex items-center justify-between gap-2">
-            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-              <i data-lucide="map-pin" class="w-4 h-4 text-brand-500"></i> Ubicación y Contacto
-            </h4>
-            ${(rec['Georeferencia'] || rec['Cod Seguimiento Cliente'] || rec['Nº']) ? `
-              <a href="${buildMapaTecnicosProvinciaUrl(rec)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
-                Abrir en Mapa <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-              </a>
-            ` : ''}
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            <div><span class="text-slate-500 block">Teléfono Móvil</span><strong class="text-slate-900 font-mono">${escapeHtml(rec['Móvil'] || '-')}</strong></div>
-            <div><span class="text-slate-500 block">Teléfono Fijo</span><span class="text-slate-800 font-mono">${escapeHtml(rec['Fijo'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Sector Operativo</span><span class="text-slate-800">${escapeHtml(rec['Sector Operativo'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Localidad / Región</span><span class="text-slate-800">${escapeHtml(rec['Localidad'] || '-')} (${escapeHtml(rec['Región / Zona'] || '-')})</span></div>
-            <div class="sm:col-span-2"><span class="text-slate-500 block">Dirección Completa</span><strong class="text-slate-900">${escapeHtml(rec['Dirección'] || '-')}</strong></div>
-            <div><span class="text-slate-500 block">Georeferencia</span><span class="font-mono text-slate-700">${escapeHtml(rec['Georeferencia'] || '-')}</span></div>
-            <div><span class="text-slate-500 block">Proveedor / Proyecto</span><span class="text-slate-800">${escapeHtml(rec['Proveedeor'] || '-')} (ID: ${escapeHtml(rec['Id de Proyecto'] || '-')})</span></div>
-          </div>
-        </div>
-
-        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <i data-lucide="wifi" class="w-4 h-4 text-brand-500"></i> Suscripción y Servicios
-          </h4>
-          ${subItems.length > 0 ? `
-            <div class="flex flex-wrap gap-2">
-              ${subItems.map(item => `<span class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 text-xs font-medium">${escapeHtml(item)}</span>`).join('')}
-            </div>
-          ` : '<p class="text-xs text-slate-400">Sin detalles de suscripción</p>'}
-        </div>
-
-        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <i data-lucide="cpu" class="w-4 h-4 text-brand-500"></i> Datos Técnicos (CTOs)
-          </h4>
-          ${techItems.length > 0 ? `
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-mono bg-slate-50 p-3 rounded-lg border border-slate-200">
-              ${techItems.map(t => `<div class="text-slate-700 truncate" title="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
-            </div>
-          ` : '<p class="text-xs text-slate-400">Sin datos técnicos registrados</p>'}
-        </div>
-
-        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-            <i data-lucide="history" class="w-4 h-4 text-brand-500"></i> Historial de Estados
-          </h4>
-          ${historyItems.length > 0 ? `
-            <ul class="space-y-2 text-xs">
-              ${historyItems.map(h => `
-                <li class="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 leading-relaxed">
-                  ${escapeHtml(h)}
-                </li>
-              `).join('')}
-            </ul>
-          ` : '<p class="text-xs text-slate-400">Sin historial disponible</p>'}
-        </div>
-      `;
+      modalBody.innerHTML = buildDetailPanelHtml(rec);
 
       const modal = document.getElementById('detailModal');
       modal.classList.remove('hidden');
@@ -2021,7 +2681,7 @@
     }
 
     // =========================================================================
-    // EXPORTAR EXCEL BASE WIN (46 COLUMNAS HOMOLOGADAS)
+    // EXPORTAR EXCEL BASE WIN (46 COLUMNAS HOMOLOGADAS - INTACTO)
     // =========================================================================
     const WIN_HEADERS = [
       "OrdenId", "TipoOrden", "TipoTraba", "Motivo Trabajo", "F.Soli", "Cliente", "Tipo", "TipoClienId",
@@ -2384,9 +3044,7 @@
             document.head.appendChild(s);
           });
           if (window.ExcelJS) return window.ExcelJS;
-        } catch (e) {
-          // Intentar siguiente CDN
-        }
+        } catch (e) {}
       }
       throw new Error('No se pudo cargar la librería ExcelJS.');
     }
