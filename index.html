@@ -121,7 +121,7 @@
       </div>
 
       <div class="flex items-center gap-2 sm:gap-2.5">
-        <button onclick="saveAllFullRecordsToSheet()" id="btnSaveAllFull" title="Agregar todos los registros completos actuales a Google Sheets sin reemplazar existentes" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-brand-500 border border-brand-600 rounded-xl hover:bg-brand-600 transition shadow-xs cursor-pointer">
+        <button onclick="saveAllFullRecordsToSheet()" id="btnSaveAllFull" title="Agregar registros completos únicos a Google Sheets sin duplicar filas idénticas" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-brand-500 border border-brand-600 rounded-xl hover:bg-brand-600 transition shadow-xs cursor-pointer">
           <i data-lucide="database-backup" class="w-3.5 h-3.5"></i>
           <span class="hidden xl:inline">Guardar Completos</span>
         </button>
@@ -524,7 +524,7 @@
           <i data-lucide="edit-3" class="w-5 h-5"></i>
           <div>
             <h3 class="text-base font-extrabold tracking-tight">Gestionar Estado de Orden</h3>
-            <p class="text-xs text-white/90">Guarda toda la fila/columnas y bitácora en Google Sheets</p>
+            <p class="text-xs text-white/90">Guarda en REPROGRAMA / CANCELADOS y registro completo único en Google Sheets</p>
           </div>
         </div>
         <button onclick="closeActionStatusModal()" class="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/15 transition cursor-pointer">
@@ -624,7 +624,7 @@
 
         <div class="pt-2 flex items-center justify-between gap-3 border-t border-slate-200">
           <span id="actTargetSheetBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800">
-            Hoja destino: REGISTROS_COMPLETOS
+            Hoja destino: REPROGRAMA / CANCELADOS + REGISTROS_COMPLETOS
           </span>
           <div class="flex items-center gap-2">
             <button type="button" onclick="closeActionStatusModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
@@ -640,7 +640,7 @@
     </div>
   </div>
 
-  <!-- MODAL DE BITÁCORA POR DOCUMENTO (DNI) CON VISTA COMPLETA IGUAL AL PANEL DERECHO -->
+  <!-- MODAL DE BITÁCORA POR DOCUMENTO (DNI) CON DETALLE DE REPROGRAMA Y CANCELADOS -->
   <div id="bitacoraModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
     <div onclick="closeBitacoraModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
     <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden z-10 animate-fade-in">
@@ -650,9 +650,9 @@
             <i data-lucide="book-open-check" class="w-5 h-5"></i>
           </div>
           <div>
-            <div class="flex items-center gap-2">
-              <h3 class="text-base font-extrabold">Bitácora y Ficha Completa por Documento</h3>
-              <span id="bitacoraSourceBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white">REGISTROS_COMPLETOS</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-base font-extrabold">Detalle por Documento (REPROGRAMA / CANCELADOS)</h3>
+              <span id="bitacoraSourceBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white">REPROGRAMA</span>
             </div>
             <p id="bitacoraSubtitle" class="text-xs text-slate-300 mt-0.5 font-mono">DNI: ---</p>
           </div>
@@ -837,6 +837,39 @@
     }
 
     // =========================================================================
+    // UNICIDAD EN REGISTROS_COMPLETOS (PERMITE GUARDAR SI "Fecha Solicitud" ES DIFERENTE)
+    // =========================================================================
+    function buildFullRowSignatureWithoutFechaSolicitud(rowObj) {
+      const src = rowObj && typeof rowObj === 'object' ? rowObj : {};
+      const keysToCompare = EXPECTED_HEADERS.filter(h => h !== 'Fecha Solicitud');
+
+      return keysToCompare
+        .map(k => {
+          let val = String(src[k] || '').replace(/^'+/, '').trim();
+          if (k === 'Estado' && !val && src['ESTADO_GUARDADO']) {
+            val = String(src['ESTADO_GUARDADO'] || '').trim();
+          }
+          return `${k}:${val}`;
+        })
+        .join('||');
+    }
+
+    function isDuplicateInSavedFullExceptFechaSolicitud(rowObj, extraSignatureSet = null) {
+      const newFechaSolicitud = String((rowObj && rowObj['Fecha Solicitud']) || '').replace(/^'+/, '').trim();
+      const sigWithoutFecha = buildFullRowSignatureWithoutFechaSolicitud(rowObj);
+
+      if (extraSignatureSet && extraSignatureSet.has(`${sigWithoutFecha}@@FECHA:${newFechaSolicitud}`)) {
+        return true;
+      }
+
+      return fullSavedRecordsList.some(existing => {
+        const existingFechaSolicitud = String((existing && existing['Fecha Solicitud']) || '').replace(/^'+/, '').trim();
+        const existingSigWithoutFecha = buildFullRowSignatureWithoutFechaSolicitud(existing);
+        return existingSigWithoutFecha === sigWithoutFecha && existingFechaSolicitud === newFechaSolicitud;
+      });
+    }
+
+    // =========================================================================
     // SINCRONIZACIÓN Y GUARDADO EN GOOGLE SHEETS
     // =========================================================================
     async function syncBitacoraFromGoogleSheet(showNotification = false) {
@@ -880,7 +913,7 @@
       badge.textContent = `${n} guardado${n === 1 ? '' : 's'}`;
     }
 
-    // Guardar TODOS los registros completos actuales (agrega sin reemplazar existentes)
+    // Guardar SOLO registros completos únicos en REGISTROS_COMPLETOS (omite duplicados con misma Fecha Solicitud)
     async function saveAllFullRecordsToSheet() {
       if (!masterRecords || masterRecords.length === 0) {
         showToast('No hay registros en la Base Principal para guardar.', 'warning');
@@ -894,21 +927,47 @@
         btn.innerHTML = 'Guardando...';
       }
 
-      const fechaHoraGuardado = formatPeruDateTimeNow();
-      const fechaGuardadoDia = getTodayDdMmYyyy();
-
-      const recordsPayload = masterRecords.map(rec => {
-        const rowObj = {};
-        EXPECTED_HEADERS.forEach(h => {
-          rowObj[h] = String(rec[h] || '');
-        });
-        rowObj['ESTADO_GUARDADO'] = String(rec['Estado'] || '').toUpperCase().trim();
-        rowObj['FECHA_GUARDADO_DIA'] = fechaGuardadoDia;
-        rowObj['FECHA_HORA_GUARDADO'] = fechaHoraGuardado;
-        return rowObj;
-      });
-
       try {
+        if (fullSavedRecordsList.length === 0) {
+          await syncBitacoraFromGoogleSheet(false);
+        }
+
+        const fechaHoraGuardado = formatPeruDateTimeNow();
+        const fechaGuardadoDia = getTodayDdMmYyyy();
+        const batchKeys = new Set();
+        const uniqueToSave = [];
+        let skippedDuplicates = 0;
+
+        masterRecords.forEach(rec => {
+          const estadoUpper = String(rec['Estado'] || '').toUpperCase().trim();
+          const rowObj = {};
+          EXPECTED_HEADERS.forEach(h => {
+            rowObj[h] = h === 'Estado' ? estadoUpper : String(rec[h] || '');
+          });
+          rowObj['ESTADO_GUARDADO'] = estadoUpper;
+          rowObj['FECHA_GUARDADO_DIA'] = fechaGuardadoDia;
+          rowObj['FECHA_HORA_GUARDADO'] = fechaHoraGuardado;
+          rowObj['FECHA_REPROGRAMA'] = String(rec['FECHA_REPROGRAMA'] || '');
+          rowObj['TRAMO'] = String(rec['TRAMO'] || '');
+          rowObj['OBSERVACIONES'] = String(rec['OBSERVACIONES'] || '');
+
+          const fechaSol = String(rowObj['Fecha Solicitud'] || '').replace(/^'+/, '').trim();
+          const key = `${buildFullRowSignatureWithoutFechaSolicitud(rowObj)}@@FECHA:${fechaSol}`;
+
+          if (isDuplicateInSavedFullExceptFechaSolicitud(rowObj, batchKeys)) {
+            skippedDuplicates++;
+            return;
+          }
+
+          batchKeys.add(key);
+          uniqueToSave.push(rowObj);
+        });
+
+        if (uniqueToSave.length === 0) {
+          showToast(`No se guardaron registros nuevos: todos (${skippedDuplicates}) ya existen en REGISTROS_COMPLETOS con los mismos datos y misma Fecha Solicitud.`, 'warning');
+          return;
+        }
+
         const response = await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -916,7 +975,7 @@
             action: 'save_all_full',
             fechaHoraGuardado,
             fechaGuardadoDia,
-            records: recordsPayload
+            records: uniqueToSave
           })
         });
 
@@ -925,9 +984,11 @@
           throw new Error((result && result.error) || 'No se pudo guardar los registros completos');
         }
 
-        fullSavedRecordsList.push(...recordsPayload);
+        fullSavedRecordsList.push(...uniqueToSave);
         updateFullSavedBadge();
-        showToast(`Se agregaron ${recordsPayload.length} registros completos a Google Sheets sin reemplazar los existentes.`, 'success');
+
+        const dupMsg = skippedDuplicates > 0 ? ` (${skippedDuplicates} duplicado${skippedDuplicates === 1 ? '' : 's'} omitido${skippedDuplicates === 1 ? '' : 's'})` : '';
+        showToast(`Se agregaron ${uniqueToSave.length} registro${uniqueToSave.length === 1 ? '' : 's'} único${uniqueToSave.length === 1 ? '' : 's'} a REGISTROS_COMPLETOS${dupMsg}.`, 'success');
       } catch (err) {
         console.error('Error guardando registros completos:', err);
         showToast('Error al guardar registros completos: ' + err.message, 'error');
@@ -1005,47 +1066,30 @@
       return String(val).replace(/^'+/, '').trim();
     }
 
+    // Solo compara contra REPROGRAMA y CANCELADOS
     function findBitacoraMatchesForDni(dniRaw) {
       const targetDni = normalizeExactDni(dniRaw);
       if (!targetDni) return null;
 
-      const matchesFull = fullSavedRecordsList.filter(row => {
-        const rowDni = normalizeExactDni(row['Número Documento'] || row['DNI'] || row['DOCUMENTO']);
-        return rowDni !== '' && rowDni === targetDni;
-      });
-
-      if (matchesFull.length > 0) {
-        return {
-          source: 'REGISTROS_COMPLETOS',
-          rows: matchesFull
-        };
-      }
-
       const matchesReprograma = bitacoraReprogramaList.filter(row => {
-        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO']);
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO'] || row['Número Documento']);
         return rowDni !== '' && rowDni === targetDni;
       });
-
-      if (matchesReprograma.length > 0) {
-        return {
-          source: 'REPROGRAMA',
-          rows: matchesReprograma
-        };
-      }
 
       const matchesCancelados = bitacoraCanceladosList.filter(row => {
-        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO']);
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO'] || row['Número Documento']);
         return rowDni !== '' && rowDni === targetDni;
       });
 
-      if (matchesCancelados.length > 0) {
-        return {
-          source: 'CANCELADOS',
-          rows: matchesCancelados
-        };
+      if (matchesReprograma.length === 0 && matchesCancelados.length === 0) {
+        return null;
       }
 
-      return null;
+      return {
+        reprogramaRows: matchesReprograma,
+        canceladosRows: matchesCancelados,
+        totalCount: matchesReprograma.length + matchesCancelados.length
+      };
     }
 
     function extractHistoryTimestampMs(entryText) {
@@ -1061,7 +1105,6 @@
         .map(s => s.trim())
         .filter(Boolean);
 
-      // Identificar el índice con la fecha y hora más actual en Historial de Estados
       let latestHistoryIndex = -1;
       let maxHistoryTime = -Infinity;
       historyItems.forEach((item, idx) => {
@@ -1188,52 +1231,15 @@
       `;
     }
 
-    function openBitacoraModal(dniRaw) {
-      const targetDni = normalizeExactDni(dniRaw);
-      const matchData = findBitacoraMatchesForDni(targetDni);
-      if (!matchData) return;
-
-      const isFull = matchData.source === 'REGISTROS_COMPLETOS';
-      const isReprog = matchData.source === 'REPROGRAMA';
-      const badge = document.getElementById('bitacoraSourceBadge');
-      const iconHeader = document.getElementById('bitacoraIconHeader');
-
-      badge.textContent = `HOJA: ${matchData.source}`;
-      badge.className = (isFull || isReprog)
-        ? 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white'
-        : 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-600 text-white';
-
-      iconHeader.className = (isFull || isReprog)
-        ? 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0'
-        : 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0';
-
-      document.getElementById('bitacoraSubtitle').textContent = `DOCUMENTO / DNI: ${targetDni}`;
-      document.getElementById('bitacoraCountFooter').textContent =
-        `${matchData.rows.length} registro${matchData.rows.length === 1 ? '' : 's'} encontrado${matchData.rows.length === 1 ? '' : 's'} en ${matchData.source}`;
-
-      const body = document.getElementById('bitacoraModalBody');
-      body.innerHTML = matchData.rows.map((row, index) => {
-        if (isFull || row['Cliente'] || row['Dirección'] || row['Suscripción']) {
-          return `
-            <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-extrabold uppercase text-brand-600">Orden Nº ${escapeHtml(row['Nº'] || row['ORDEN'] || '—')}</span>
-                  ${renderStatusBadge(row['ESTADO_GUARDADO'] || row['Estado'] || '')}
-                </div>
-                <span class="text-xs font-semibold text-slate-600">${escapeHtml(row['Cliente'] || '')}</span>
-              </div>
-              ${buildDetailPanelHtml(row)}
-            </div>
-          `;
-        }
-
+    function renderSheetCardsHtml(rows, sheetName, accentType) {
+      const isReprog = accentType === 'reprograma';
+      return rows.map((row, index) => {
         const entries = Object.entries(row);
         return `
           <div class="bg-white rounded-xl border ${isReprog ? 'border-brand-200' : 'border-rose-200'} p-4 shadow-2xs space-y-2.5">
             <div class="flex items-center justify-between border-b border-slate-100 pb-2">
               <span class="text-xs font-extrabold uppercase ${isReprog ? 'text-brand-600' : 'text-rose-600'}">
-                Registro #${index + 1} • ${escapeHtml(row['ESTADO'] || matchData.source)}
+                ${escapeHtml(sheetName)} #${index + 1} • ${escapeHtml(row['ESTADO'] || sheetName)}
               </span>
               <span class="text-[11px] font-mono text-slate-500">
                 ${escapeHtml(row['FECHA Y HORA GUARDADO'] || '')}
@@ -1250,6 +1256,68 @@
           </div>
         `;
       }).join('');
+    }
+
+    function openBitacoraModal(dniRaw) {
+      const targetDni = normalizeExactDni(dniRaw);
+      const matchData = findBitacoraMatchesForDni(targetDni);
+      if (!matchData) return;
+
+      const hasReprog = matchData.reprogramaRows.length > 0;
+      const hasCancel = matchData.canceladosRows.length > 0;
+
+      const badge = document.getElementById('bitacoraSourceBadge');
+      const iconHeader = document.getElementById('bitacoraIconHeader');
+
+      if (hasReprog && hasCancel) {
+        badge.textContent = 'REPROGRAMA + CANCELADOS';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0';
+      } else if (hasReprog) {
+        badge.textContent = 'HOJA: REPROGRAMA';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0';
+      } else {
+        badge.textContent = 'HOJA: CANCELADOS';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-600 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0';
+      }
+
+      document.getElementById('bitacoraSubtitle').textContent = `DOCUMENTO / DNI: ${targetDni}`;
+      document.getElementById('bitacoraCountFooter').textContent =
+        `${matchData.totalCount} registro${matchData.totalCount === 1 ? '' : 's'} (${matchData.reprogramaRows.length} REPROGRAMA • ${matchData.canceladosRows.length} CANCELADOS)`;
+
+      const sectionsHtml = [];
+
+      if (hasReprog) {
+        sectionsHtml.push(`
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-extrabold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                Detalle Hoja REPROGRAMA (${matchData.reprogramaRows.length})
+              </h4>
+            </div>
+            ${renderSheetCardsHtml(matchData.reprogramaRows, 'REPROGRAMA', 'reprograma')}
+          </div>
+        `);
+      }
+
+      if (hasCancel) {
+        sectionsHtml.push(`
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-extrabold uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+                Detalle Hoja CANCELADOS (${matchData.canceladosRows.length})
+              </h4>
+            </div>
+            ${renderSheetCardsHtml(matchData.canceladosRows, 'CANCELADOS', 'cancelados')}
+          </div>
+        `);
+      }
+
+      document.getElementById('bitacoraModalBody').innerHTML = sectionsHtml.join('');
 
       const modal = document.getElementById('bitacoraModal');
       modal.classList.remove('hidden');
@@ -1264,7 +1332,7 @@
     }
 
     // =========================================================================
-    // MODAL DE ACCIÓN (CAMBIAR ESTADO Y GUARDAR REGISTRO COMPLETO)
+    // MODAL DE ACCIÓN (CAMBIAR ESTADO Y GUARDAR EN REPROGRAMA/CANCELADOS + REGISTROS_COMPLETOS ÚNICO)
     // =========================================================================
     function openActionStatusModal(orderNumber) {
       const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
@@ -1330,13 +1398,13 @@
       }
 
       if (selected === 'REPROGRAMA') {
-        targetBadge.textContent = 'Guarda registro completo + REPROGRAMA';
+        targetBadge.textContent = 'Guarda en REPROGRAMA + REGISTROS_COMPLETOS (único)';
         targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800';
       } else if (selected === 'CANCELADO') {
-        targetBadge.textContent = 'Guarda registro completo + CANCELADOS';
+        targetBadge.textContent = 'Guarda en CANCELADOS + REGISTROS_COMPLETOS (único)';
         targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800';
       } else {
-        targetBadge.textContent = 'Guarda registro completo + Estado del día';
+        targetBadge.textContent = 'Guarda en hoja correspondiente + REGISTROS_COMPLETOS (único)';
         targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800';
       }
 
@@ -1377,6 +1445,7 @@
       }
 
       const isReprograma = finalEstado === 'REPROGRAMA';
+      const isCancelado = finalEstado === 'CANCELADO';
       const fechaReprogramaRaw = document.getElementById('actFechaReprograma').value;
       const fechaReprogramaFormatted = isReprograma ? formatDateToDdMmYyyy(fechaReprogramaRaw) : '';
       const tramoUpper = isReprograma ? document.getElementById('actTramoSelect').value.toUpperCase().trim() : '';
@@ -1392,19 +1461,10 @@
       EXPECTED_HEADERS.forEach(h => {
         fullRecordPayload[h] = h === 'Estado' ? finalEstado : String(activeActionRecord[h] || '');
       });
-
-      const payload = {
-        orden: ordenStr,
-        codigo: codigoStr,
-        dni: dniStr,
-        estado: finalEstado,
-        fechaReprograma: fechaReprogramaFormatted,
-        tramo: tramoUpper,
-        observaciones: observacionesUpper,
-        fechaHoraGuardado: fechaHoraGuardado,
-        fechaGuardadoDia: fechaGuardadoDia,
-        fullRecord: fullRecordPayload
-      };
+      fullRecordPayload['ESTADO_GUARDADO'] = finalEstado;
+      fullRecordPayload['FECHA_REPROGRAMA'] = fechaReprogramaFormatted;
+      fullRecordPayload['TRAMO'] = tramoUpper;
+      fullRecordPayload['OBSERVACIONES'] = observacionesUpper;
 
       const btnSave = document.getElementById('btnSaveActionStatus');
       const prevBtnHtml = btnSave.innerHTML;
@@ -1412,6 +1472,28 @@
       btnSave.innerHTML = 'Guardando...';
 
       try {
+        if (fullSavedRecordsList.length === 0) {
+          await syncBitacoraFromGoogleSheet(false);
+        }
+
+        // Solo para REGISTROS_COMPLETOS: evita duplicados con los mismos datos,
+        // pero SÍ permite guardar si "Fecha Solicitud" es diferente.
+        const skipFullDuplicate = isDuplicateInSavedFullExceptFechaSolicitud(fullRecordPayload);
+
+        const payload = {
+          orden: ordenStr,
+          codigo: codigoStr,
+          dni: dniStr,
+          estado: finalEstado,
+          fechaReprograma: fechaReprogramaFormatted,
+          tramo: tramoUpper,
+          observaciones: observacionesUpper,
+          fechaHoraGuardado: fechaHoraGuardado,
+          fechaGuardadoDia: fechaGuardadoDia,
+          skipFullRecord: skipFullDuplicate,
+          fullRecord: fullRecordPayload
+        };
+
         const response = await fetch(GOOGLE_SCRIPT_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -1429,16 +1511,18 @@
         activeActionRecord._updatedAt = fechaHoraGuardado;
         saveToStorage();
 
-        fullSavedRecordsList.push({
-          ...fullRecordPayload,
-          'ESTADO_GUARDADO': finalEstado,
-          'FECHA_GUARDADO_DIA': fechaGuardadoDia,
-          'FECHA_HORA_GUARDADO': fechaHoraGuardado,
-          'FECHA_REPROGRAMA': fechaReprogramaFormatted,
-          'TRAMO': tramoUpper,
-          'OBSERVACIONES': observacionesUpper
-        });
-        updateFullSavedBadge();
+        if (!skipFullDuplicate) {
+          fullSavedRecordsList.push({
+            ...fullRecordPayload,
+            'ESTADO_GUARDADO': finalEstado,
+            'FECHA_GUARDADO_DIA': fechaGuardadoDia,
+            'FECHA_HORA_GUARDADO': fechaHoraGuardado,
+            'FECHA_REPROGRAMA': fechaReprogramaFormatted,
+            'TRAMO': tramoUpper,
+            'OBSERVACIONES': observacionesUpper
+          });
+          updateFullSavedBadge();
+        }
 
         if (isReprograma) {
           bitacoraReprogramaList.push({
@@ -1451,7 +1535,7 @@
             'OBSERVACIONES': observacionesUpper,
             'FECHA Y HORA GUARDADO': fechaHoraGuardado
           });
-        } else if (finalEstado === 'CANCELADO') {
+        } else if (isCancelado) {
           bitacoraCanceladosList.push({
             'ORDEN': ordenStr,
             'CODIGO': codigoStr,
@@ -1464,7 +1548,12 @@
 
         closeActionStatusModal();
         refreshAllUI();
-        showToast(`¡Guardado! Estado ${finalEstado} activo en tabla y registro completo enviado a Google Sheets.`, 'success');
+
+        if (skipFullDuplicate) {
+          showToast(`Guardado en hoja de estado (${finalEstado}). Omitido en REGISTROS_COMPLETOS por tener los mismos datos y misma Fecha Solicitud.`, 'info');
+        } else {
+          showToast(`¡Guardado! Estado ${finalEstado} registrado en su hoja correspondiente y en REGISTROS_COMPLETOS.`, 'success');
+        }
       } catch (err) {
         console.error('Error guardando en Google Sheets:', err);
         showToast('Error al guardar en Google Sheets: ' + err.message, 'error');
@@ -2653,15 +2742,18 @@
 
           if (header === 'Número Documento') {
             const bitacoraMatch = findBitacoraMatchesForDni(val);
+            const hasReprog = bitacoraMatch && bitacoraMatch.reprogramaRows.length > 0;
+            const hasCancel = bitacoraMatch && bitacoraMatch.canceladosRows.length > 0;
+
             const bitacoraBtn = bitacoraMatch
-              ? (bitacoraMatch.source === 'CANCELADOS'
-                  ? `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver ficha completa y bitácora (${bitacoraMatch.rows.length})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs transition cursor-pointer">
-                       <i data-lucide="file-warning" class="w-3 h-3"></i>
-                       <span>${bitacoraMatch.rows.length}</span>
-                     </button>`
-                  : `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver ficha completa y bitácora (${bitacoraMatch.rows.length})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-brand-500 text-white hover:bg-brand-600 shadow-2xs transition cursor-pointer">
+              ? (hasReprog
+                  ? `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver detalle (${bitacoraMatch.reprogramaRows.length} REPROGRAMA${hasCancel ? ` • ${bitacoraMatch.canceladosRows.length} CANCELADOS` : ''})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-brand-500 text-white hover:bg-brand-600 shadow-2xs transition cursor-pointer">
                        <i data-lucide="history" class="w-3 h-3"></i>
-                       <span>${bitacoraMatch.rows.length}</span>
+                       <span>${bitacoraMatch.totalCount}</span>
+                     </button>`
+                  : `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver detalle (${bitacoraMatch.canceladosRows.length} CANCELADOS)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs transition cursor-pointer">
+                       <i data-lucide="file-warning" class="w-3 h-3"></i>
+                       <span>${bitacoraMatch.totalCount}</span>
                      </button>`)
               : '';
 
