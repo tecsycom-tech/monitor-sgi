@@ -1,0 +1,3523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor SGI • Comparador y Base de Órdenes</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23FF5A0A'/%3E%3Cpath d='M8 12l8 4.5L24 12M8 16.5l8 4.5 8-4.5M8 21l8 4.5 8-4.5M16 6.5L8 11l8 4.5L24 11l-8-4.5z' fill='none' stroke='%23FFFFFF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS para exportar a Excel (.xlsx) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#FFF4ED',
+              100: '#FFE6D5',
+              200: '#FECCAA',
+              300: '#FDAA74',
+              400: '#FB7C3C',
+              500: '#FF5A0A',
+              600: '#E04400',
+              700: '#B83300',
+              800: '#932906',
+              900: '#77240A',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: #F8FAFC;
+      color: #0F172A;
+    }
+
+    /* Scrollbar limpio y elegante para tablas anchas */
+    .custom-scrollbar::-webkit-scrollbar {
+      height: 10px;
+      width: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #F1F5F9;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 9999px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+
+    @keyframes fadeInSlide {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fadeInSlide 0.25s ease-out forwards;
+    }
+
+    /* Parpadeo rojo de alerta para registros que desaparecieron en Megalogic */
+    @keyframes missingBlinkRow {
+      0%, 100% {
+        background-color: #FEF2F2;
+      }
+      50% {
+        background-color: #FECACA;
+      }
+    }
+    .row-missing-alert {
+      animation: missingBlinkRow 1.3s ease-in-out infinite;
+    }
+
+    /* Parpadeo rojo en celda/pill para tiempo excedido (En camino > 40m / En proceso > 2h) */
+    @keyframes pulseRedAlert {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.55);
+      }
+      50% {
+        box-shadow: 0 0 0 6px rgba(225, 29, 72, 0);
+      }
+    }
+    .alert-rojo {
+      animation: pulseRedAlert 1.5s infinite;
+    }
+
+    @keyframes timeAlertRow {
+      0%, 100% {
+        background-color: #FFF1F2;
+      }
+      50% {
+        background-color: #FFE4E6;
+      }
+    }
+    .row-time-alert {
+      animation: timeAlertRow 1.8s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Barra Superior -->
+  <header class="bg-white border-b border-slate-200/90 sticky top-0 z-30 shadow-2xs">
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shadow-sm shadow-brand-500/30">
+          <i data-lucide="layers" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-slate-900">Monitor SGI</h1>
+            <span class="px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full bg-brand-50 text-brand-600 border border-brand-200">
+              Órdenes
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">Comparador inteligente de cargas y consolidación de base</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-2.5 flex-wrap justify-end">
+        <button id="btnSyncSheet" onclick="syncBitacoraFromGoogleSheet(true)" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition cursor-pointer" title="Sincronizar con Google Sheets">
+          <i data-lucide="refresh-cw" class="w-4 h-4 text-brand-500"></i>
+          <span class="hidden md:inline">Sincronizar</span>
+        </button>
+
+        <button id="btnSaveAllFull" onclick="saveAllFullRecordsToSheet()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 transition shadow-xs cursor-pointer" title="Guardar todos los registros completos únicos en Google Sheets">
+          <i data-lucide="database-backup" class="w-4 h-4"></i>
+          <span>Guardar Registros</span>
+          <span id="fullSavedCountBadge" class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-white/20 text-white">0</span>
+        </button>
+
+        <button onclick="exportBaseWin()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-[#004C99] bg-blue-50 border border-blue-200 hover:bg-blue-100 transition shadow-2xs cursor-pointer" title="Exportar archivo Excel Base WIN (46 columnas)">
+          <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Base WIN</span>
+        </button>
+
+        <button onclick="exportToExcel()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition shadow-2xs cursor-pointer">
+          <i data-lucide="download" class="w-4 h-4 text-emerald-600"></i>
+          <span class="hidden sm:inline">Exportar Excel</span>
+        </button>
+
+        <button onclick="requestClearBase()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-rose-600 bg-rose-50/70 border border-rose-200/80 hover:bg-rose-100/80 transition cursor-pointer" title="Vaciar base guardada">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          <span class="hidden md:inline">Limpiar Base</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenido Principal -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Tarjetas KPI Resumen -->
+    <section class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500">Total en Base Principal</p>
+          <p id="kpiTotal" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">0</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+          <i data-lucide="database" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500">Nuevos Última Carga</p>
+          <p id="kpiLastAdded" class="text-2xl sm:text-3xl font-extrabold text-brand-500 mt-1">0</p>
+          <p id="kpiLastTime" class="text-[11px] text-slate-400 mt-0.5">Sin cargas recientes</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-brand-50 text-brand-500 flex items-center justify-center">
+          <i data-lucide="sparkles" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500">Órdenes Agendadas</p>
+          <p id="kpiAgendadas" class="text-2xl sm:text-3xl font-extrabold text-sky-600 mt-1">0</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+          <i data-lucide="calendar-check" class="w-5 h-5"></i>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-medium text-slate-500">Cuadrillas Activas</p>
+          <p id="kpiCuadrillas" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 mt-1">0</p>
+        </div>
+        <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <i data-lucide="users" class="w-5 h-5"></i>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel de Pegado y Detección -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-start sm:items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-brand-50 text-brand-500 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+            <i data-lucide="clipboard-paste" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="text-sm sm:text-base font-bold text-slate-900">Pegar Nueva Extracción del Sistema</h2>
+            <p class="text-xs text-slate-500">Pega directamente con <kbd class="px-1.5 py-0.5 text-[11px] font-semibold bg-slate-100 border border-slate-300 rounded">Ctrl + V</kbd> lo copiado de la web SGI. Detecta y compara automáticamente por el número de orden (<strong>Nº</strong>).</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 self-end sm:self-center">
+          <label class="inline-flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer select-none">
+            <input id="autoProcessToggle" type="checkbox" checked class="w-4 h-4 rounded accent-brand-500 cursor-pointer" />
+            Procesar al pegar
+          </label>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-3">
+        <div class="relative">
+          <textarea
+            id="pasteInput"
+            rows="4"
+            placeholder="Haz clic aquí y presiona Ctrl + V para pegar los registros copiados del portal..."
+            class="w-full rounded-xl border border-slate-300 bg-slate-50/60 focus:bg-white focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10 transition p-3.5 text-xs sm:text-sm font-mono text-slate-800 placeholder:font-sans placeholder:text-slate-400 outline-none resize-y"
+          ></textarea>
+          <button
+            id="clearInputBtn"
+            onclick="clearTextarea()"
+            type="button"
+            class="hidden absolute top-2.5 right-2.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 shadow-2xs"
+          >
+            Limpiar cuadro
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 text-xs text-slate-500">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600 shrink-0"></i>
+            <span>Los registros ya existentes en tu base no se duplican; solo se listan los <strong>nuevos</strong>.</span>
+          </div>
+
+          <div class="flex items-center gap-2.5">
+            <button
+              onclick="processPastedData()"
+              class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-brand-500 hover:bg-brand-600 active:scale-[0.99] transition shadow-sm shadow-brand-500/25 cursor-pointer"
+            >
+              <i data-lucide="search-check" class="w-4 h-4"></i>
+              Analizar y Comparar
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panel de Resultados de Comparación -->
+    <section id="comparisonSection" class="hidden animate-fade-in bg-white rounded-2xl border-2 border-brand-500/40 shadow-md overflow-hidden">
+      <div class="bg-gradient-to-r from-brand-50 via-orange-50/60 to-white px-4 sm:px-6 py-4 border-b border-brand-200/70 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <i data-lucide="git-compare" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-base font-extrabold text-slate-900">Resultado de la Comparación</h3>
+              <span id="compNewBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                +0 Nuevos
+              </span>
+              <span id="compExistingBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                0 Existentes omitidos
+              </span>
+            </div>
+            <p id="compSummaryText" class="text-xs sm:text-sm text-slate-600 mt-1">
+              Revisa los registros nuevos detectados antes de incorporarlos a tu base principal.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button
+            onclick="dismissComparison()"
+            class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition cursor-pointer"
+          >
+            Descartar
+          </button>
+
+          <button
+            id="btnMergeNew"
+            onclick="mergeNewRecordsToMaster()"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition shadow-sm shadow-emerald-600/20 cursor-pointer"
+          >
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span id="btnMergeNewLabel">Agregar Nuevos a la Base Principal</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="compNewContainer" class="p-4 sm:p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Registros Nuevos Listos para Incorporar
+          </span>
+          <button onclick="copyNewOrderNumbers()" class="text-xs font-semibold text-brand-600 hover:text-brand-700 inline-flex items-center gap-1 cursor-pointer">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            Copiar Nº de órdenes nuevas
+          </button>
+        </div>
+
+        <div class="overflow-x-auto custom-scrollbar border border-emerald-200 rounded-xl">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr id="compNewTableHead" class="bg-emerald-50/80 text-emerald-950 font-bold border-b border-emerald-200">
+              </tr>
+            </thead>
+            <tbody id="compNewTableBody" class="divide-y divide-emerald-100 bg-white">
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="compNoNewContainer" class="hidden p-6 text-center space-y-2">
+        <div class="w-11 h-11 rounded-full bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+          <i data-lucide="check-check" class="w-5 h-5"></i>
+        </div>
+        <p class="text-sm font-bold text-slate-800">No hay registros nuevos en este pegado</p>
+        <p class="text-xs text-slate-500 max-w-md mx-auto">Todos los números de orden pegados ya se encontraban registrados en tu Base Principal.</p>
+      </div>
+
+      <div id="compOmittedFooter" class="bg-slate-50 border-t border-slate-200/80 px-4 sm:px-6 py-2.5">
+        <button onclick="toggleOmittedList()" class="text-xs font-semibold text-slate-600 hover:text-slate-900 inline-flex items-center gap-1.5 cursor-pointer">
+          <i id="omittedChevron" data-lucide="chevron-right" class="w-3.5 h-3.5 transition-transform"></i>
+          <span id="omittedToggleText">Ver números de orden existentes que fueron omitidos</span>
+        </button>
+        <div id="omittedListContainer" class="hidden mt-2 pt-2 border-t border-slate-200/70">
+          <div id="omittedPills" class="flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección Base Principal Consolidada -->
+    <section class="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+      <div class="p-4 sm:p-5 border-b border-slate-200/80 space-y-3">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5 flex-wrap">
+            <h2 class="text-base sm:text-lg font-extrabold text-slate-900">Base Principal de Órdenes</h2>
+            <span id="tableCountBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+              0 registros
+            </span>
+            <span id="alertCountBadge" class="hidden px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-100 text-rose-700 border border-rose-300 animate-pulse">
+              0 en alerta
+            </span>
+          </div>
+
+          <form onsubmit="handleSearchFullSavedRecord(event)" class="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+              <i data-lucide="cloud" class="w-3.5 h-3.5 text-brand-500"></i>
+              Historial Guardado:
+            </span>
+            <select
+              id="fullSearchField"
+              class="px-2 py-1 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:border-brand-500 outline-none cursor-pointer"
+            >
+              <option value="ALL">Todos</option>
+              <option value="ORDEN">Orden Nº</option>
+              <option value="CODIGO">Cod. Cliente</option>
+              <option value="DNI">DNI / Doc</option>
+            </select>
+            <input
+              id="fullSearchInput"
+              type="text"
+              placeholder="Buscar Nº, Cod o DNI..."
+              class="w-40 sm:w-48 px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-xs text-slate-800 placeholder:text-slate-400 focus:border-brand-500 outline-none"
+            />
+            <button
+              id="btnSearchFullSaved"
+              type="submit"
+              class="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold text-white bg-slate-900 hover:bg-brand-500 transition cursor-pointer"
+            >
+              <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              Buscar
+            </button>
+          </form>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <div class="relative flex-1 min-w-[210px] sm:w-64">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input
+              id="searchInput"
+              type="text"
+              oninput="renderMasterTable()"
+              placeholder="Filtrar base actual (Nº, DNI, cliente...)"
+              class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 text-xs sm:text-sm outline-none transition"
+            />
+          </div>
+
+          <select
+            id="filterCuadrilla"
+            onchange="renderMasterTable()"
+            class="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-700 font-medium focus:border-brand-500 outline-none cursor-pointer"
+          >
+            <option value="">Todas las cuadrillas</option>
+          </select>
+
+          <select
+            id="filterEstado"
+            onchange="renderMasterTable()"
+            class="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs sm:text-sm text-slate-700 font-medium focus:border-brand-500 outline-none cursor-pointer"
+          >
+            <option value="">Todos los estados</option>
+          </select>
+
+          <label class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 cursor-pointer select-none hover:bg-slate-100">
+            <input id="filterOnlyRecent" type="checkbox" onchange="renderMasterTable()" class="w-3.5 h-3.5 rounded accent-brand-500 cursor-pointer" />
+            Solo recién agregados
+          </label>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto custom-scrollbar max-h-[650px]">
+        <table class="w-full text-left border-collapse text-xs">
+          <thead class="sticky top-0 z-20">
+            <tr id="masterTableHead" class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 shadow-2xs">
+            </tr>
+          </thead>
+          <tbody id="masterTableBody" class="divide-y divide-slate-200/80 bg-white">
+          </tbody>
+        </table>
+      </div>
+
+      <div id="emptyStateContainer" class="py-16 px-4 text-center space-y-3">
+        <div class="w-14 h-14 rounded-2xl bg-brand-50 text-brand-500 mx-auto flex items-center justify-center">
+          <i data-lucide="inbox" class="w-7 h-7"></i>
+        </div>
+        <div class="space-y-1">
+          <h3 class="text-base font-bold text-slate-900">Tu Base Principal está vacía</h3>
+          <p class="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
+            Pega tu primer bloque de órdenes en el cuadro superior para comenzar a construir y comparar tu base automáticamente.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal Lateral de Detalle Completo de Orden -->
+  <div id="detailModal" class="fixed inset-0 z-50 hidden">
+    <div onclick="closeDetailModal()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] transition-opacity"></div>
+    <div class="fixed inset-y-0 right-0 max-w-2xl w-full bg-white shadow-2xl border-l border-slate-200 flex flex-col z-10 animate-fade-in">
+      <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Orden Nº</span>
+            <h3 id="modalOrderNumber" class="text-lg font-extrabold text-slate-900">---</h3>
+            <span id="modalOrderStatus"></span>
+          </div>
+          <p id="modalOrderClient" class="text-xs text-slate-500 mt-0.5">---</p>
+        </div>
+        <button onclick="closeDetailModal()" class="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="modalBody" class="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
+      </div>
+
+      <div class="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+        <span id="modalAddedMeta" class="text-xs text-slate-500"></span>
+        <button onclick="closeDetailModal()" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer">
+          Cerrar ficha
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Acción: Cambiar Estado / Guardar Registro en Google Sheets -->
+  <div id="actionStatusModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeActionStatusModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden z-10 animate-fade-in">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-brand-500 text-white flex items-center justify-center">
+            <i data-lucide="edit-3" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-extrabold">Gestionar Estado de Orden</h3>
+            <p class="text-xs text-slate-300">Guardado automático en Google Sheets</p>
+          </div>
+        </div>
+        <button onclick="closeActionStatusModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="actionStatusForm" onsubmit="submitActionStatusForm(event)" class="p-6 space-y-4 text-xs sm:text-sm">
+        <div class="grid grid-cols-3 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div>
+            <span class="text-[11px] font-semibold text-slate-500 block">ORDEN</span>
+            <strong id="actOrdenDisplay" class="text-slate-900 font-mono text-xs sm:text-sm">---</strong>
+          </div>
+          <div>
+            <span class="text-[11px] font-semibold text-slate-500 block">CODIGO</span>
+            <strong id="actCodigoDisplay" class="text-slate-900 font-mono text-xs sm:text-sm">---</strong>
+          </div>
+          <div>
+            <span class="text-[11px] font-semibold text-slate-500 block">DNI / DOC</span>
+            <strong id="actDniDisplay" class="text-slate-900 font-mono text-xs sm:text-sm">---</strong>
+          </div>
+        </div>
+
+        <div>
+          <label for="actEstadoSelect" class="block text-xs font-bold text-slate-700 mb-1.5">
+            SELECCIONAR ESTADO <span class="text-rose-500">*</span>
+          </label>
+          <select
+            id="actEstadoSelect"
+            onchange="handleActionEstadoChange()"
+            required
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-900 uppercase focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 outline-none cursor-pointer"
+          >
+            <option value="COORDINADO">COORDINADO</option>
+            <option value="REPROGRAMA">REPROGRAMA</option>
+            <option value="CLIENTE DESISTE">CLIENTE DESISTE</option>
+            <option value="AUSENTE">AUSENTE</option>
+            <option value="NO CONTESTA">NO CONTESTA</option>
+            <option value="SIN COBERTURA">SIN COBERTURA</option>
+            <option value="DUPLICADA">DUPLICADA</option>
+            <option value="DATOS ERRONEOS">DATOS ERRONEOS</option>
+            <option value="ZONA PELIGROSA">ZONA PELIGROSA</option>
+            <option value="OTRO ESTADO">OTRO ESTADO</option>
+          </select>
+        </div>
+
+        <div id="actCustomEstadoContainer" class="hidden">
+          <label for="actCustomEstadoInput" class="block text-xs font-bold text-slate-700 mb-1.5">
+            ESPECIFICAR OTRO ESTADO (MAYÚSCULAS) <span class="text-rose-500">*</span>
+          </label>
+          <input
+            id="actCustomEstadoInput"
+            type="text"
+            oninput="this.value = this.value.toUpperCase()"
+            placeholder="EJ: POSTERGADO POR LLUVIA"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white font-bold text-slate-900 uppercase focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 outline-none"
+          />
+        </div>
+
+        <div id="actReprogramaFields" class="hidden grid-cols-1 sm:grid-cols-2 gap-3 bg-brand-50/70 p-3.5 rounded-xl border border-brand-200">
+          <div>
+            <label for="actFechaReprograma" class="block text-xs font-bold text-brand-800 mb-1.5">
+              FECHA REPROGRAMA (DD/MM/YYYY) <span class="text-rose-500">*</span>
+            </label>
+            <input
+              id="actFechaReprograma"
+              type="date"
+              class="w-full px-3 py-2 rounded-xl border border-brand-300 bg-white text-slate-900 font-semibold focus:border-brand-500 outline-none"
+            />
+          </div>
+
+          <div>
+            <label for="actTramoSelect" class="block text-xs font-bold text-brand-800 mb-1.5">
+              TRAMO <span class="text-rose-500">*</span>
+            </label>
+            <select
+              id="actTramoSelect"
+              class="w-full px-3 py-2 rounded-xl border border-brand-300 bg-white text-slate-900 font-bold uppercase focus:border-brand-500 outline-none cursor-pointer"
+            >
+              <option value="">SELECCIONAR TRAMO...</option>
+              <option value="AM">AM</option>
+              <option value="PM1">PM1</option>
+              <option value="PM2">PM2</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="actObservaciones" class="block text-xs font-bold text-slate-700 mb-1.5">
+            OBSERVACIONES (SE GUARDARÁ EN MAYÚSCULAS)
+          </label>
+          <textarea
+            id="actObservaciones"
+            rows="3"
+            oninput="this.value = this.value.toUpperCase()"
+            placeholder="INGRESE EL DETALLE DE LA GESTIÓN..."
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 bg-slate-50/60 focus:bg-white font-medium text-slate-900 uppercase focus:border-brand-500 focus:ring-2 focus:ring-brand-500/15 outline-none resize-y"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-1">
+          <span id="actTargetSheetBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800">
+            Solo persistencia virtual local (no guarda en Google Sheets)
+          </span>
+        </div>
+
+        <div class="pt-2 border-t border-slate-200 flex items-center justify-end gap-2.5">
+          <button type="button" onclick="closeActionStatusModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
+            Cancelar
+          </button>
+          <button id="btnSaveActionStatus" type="submit" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs sm:text-sm font-bold shadow-sm transition cursor-pointer">
+            <i data-lucide="save" class="w-4 h-4"></i>
+            Guardar Registro
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Popup de Detalle por Documento (REPROGRAMA / CANCELADOS) -->
+  <div id="bitacoraModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeBitacoraModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden z-10 animate-fade-in">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div id="bitacoraIconHeader" class="w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0">
+            <i data-lucide="book-open-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-base font-extrabold">Detalle por Documento (REPROGRAMA / CANCELADOS)</h3>
+              <span id="bitacoraSourceBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white">REPROGRAMA</span>
+            </div>
+            <p id="bitacoraSubtitle" class="text-xs text-slate-300 mt-0.5 font-mono">DNI: ---</p>
+          </div>
+        </div>
+        <button onclick="closeBitacoraModal()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div id="bitacoraModalBody" class="p-6 overflow-y-auto space-y-5 bg-slate-50/70 flex-1 text-sm">
+      </div>
+
+      <div class="px-6 py-3.5 border-t border-slate-200 bg-white flex items-center justify-between">
+        <span id="bitacoraCountFooter" class="text-xs font-semibold text-slate-500">0 registros encontrados</span>
+        <button onclick="closeBitacoraModal()" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition cursor-pointer">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Confirmación para Limpiar Base -->
+  <div id="confirmClearModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeClearModal()" class="fixed inset-0 bg-slate-900/45 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full p-6 z-10 animate-fade-in">
+      <div class="w-11 h-11 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4">
+        <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+      </div>
+      <h3 class="text-lg font-bold text-slate-900">¿Limpiar toda la Base Principal?</h3>
+      <p class="text-xs sm:text-sm text-slate-600 mt-1.5">
+        Se eliminarán todos los registros guardados actualmente en este navegador. Esta acción no se puede deshacer.
+      </p>
+      <div class="mt-6 flex items-center justify-end gap-2.5">
+        <button onclick="closeClearModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
+          Cancelar
+        </button>
+        <button onclick="confirmClearBase()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold cursor-pointer">
+          Sí, eliminar todo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Popup de Alerta: Registros que ya no figuran en Megalogic -->
+  <div id="missingMegalogicModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+    <div onclick="closeMissingMegalogicModal()" class="fixed inset-0 bg-slate-900/50 backdrop-blur-[2px]"></div>
+    <div class="relative bg-white rounded-2xl border-2 border-rose-600 shadow-2xl max-w-lg w-full p-6 z-10 animate-fade-in">
+      <div class="flex items-start gap-3.5">
+        <div class="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 animate-pulse">
+          <i data-lucide="siren" class="w-6 h-6"></i>
+        </div>
+        <div class="flex-1">
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-700 uppercase tracking-wider">
+            Alerta Crítica de Sincronización
+          </span>
+          <h3 class="text-base sm:text-lg font-extrabold text-rose-700 mt-1">
+            Alerta: registro ya no figura en el sistema Megalogic, revisar
+          </h3>
+          <p id="missingModalSubtitle" class="text-xs sm:text-sm text-slate-600 mt-1">
+            Se detectaron órdenes que estaban en tu Base Principal pero desaparecieron en esta última carga pegada.
+          </p>
+        </div>
+      </div>
+
+      <div id="missingModalList" class="mt-4 max-h-56 overflow-y-auto space-y-2 bg-rose-50/70 border border-rose-200 rounded-xl p-3">
+      </div>
+
+      <div class="mt-5 flex items-center justify-between gap-3">
+        <span class="text-[11px] text-slate-500">Se marcaron en rojo parpadeante en la Tabla Principal.</span>
+        <button onclick="closeMissingMegalogicModal()" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold shadow-xs transition cursor-pointer">
+          Entendido, revisar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'sgi_ordenes_base_v2';
+    const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzQY63v4Yaoh2kcUIcexLQpjsfPHIQB5N_4vwWYKHLYPqGZkfg38bm281vPTELPiw4M/exec';
+
+    let masterRecords = [];
+    let pendingNewRecords = [];
+    let pendingOmitted = [];
+    let lastUpdatedStatuses = [];
+    let lastMissingRecords = [];
+    let lastBatchTime = null;
+
+    let bitacoraReprogramaList = [];
+    let bitacoraCanceladosList = [];
+    let fullSavedRecordsList = [];
+    let activeActionRecord = null;
+
+    const EXPECTED_HEADERS = [
+      'Nº', 'Cod Seguimiento Cliente', 'Número Documento', 'Estado', 'Cuadrilla',
+      'Fecha Solicitud', 'País / Empresa', 'Cliente', 'Producto', 'Tipo Ubicación',
+      'Ubicación', 'Motivo Regestión', 'Sector Operativo', 'Tipo Orden', 'Tipo Trabajo',
+      'Motivo Trabajo', 'Localidad', 'Dirección', 'Código De Seguimiento', 'Fecha Visita',
+      'Región / Zona', 'Tipo Documento', 'Prioridad', 'Móvil', 'Fijo',
+      'Inicio de Visita', 'Fin de Visita', 'Motivo de Cancelación', 'Motivo de Finalización',
+      'Motivo de Anulación', 'Motivo de Suspensión', 'Georeferencia', 'Proveedeor',
+      'Id de Proyecto', 'Código Postal', 'Motivo', 'Datos Técnicos', 'Fecha Estado',
+      'Suscripción', 'Historial de Estados', 'Email'
+    ];
+
+    const DISPLAY_HEADER_ALIASES = {
+      'Cod Seguimiento Cliente': 'Cod Cliente',
+      'Número Documento': 'Documento'
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderTableHeaders();
+      loadFromStorage();
+      setupPasteListeners();
+      refreshAllUI();
+      lucide.createIcons();
+
+      syncBitacoraFromGoogleSheet(false);
+
+      setInterval(() => {
+        if (masterRecords.length > 0) {
+          renderMasterTable();
+        }
+      }, 15000);
+    });
+
+    function getTodayDdMmYyyy() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+    }
+
+    function applySavedTodayStatesToMaster() {
+      const today = getTodayDdMmYyyy();
+      let changed = false;
+
+      const latestByOrderToday = new Map();
+
+      fullSavedRecordsList.forEach(row => {
+        const orderId = String(row['Nº'] || row['ORDEN'] || '').trim();
+        const savedEstado = String(row['ESTADO_GUARDADO'] || row['Estado'] || '').toUpperCase().trim();
+        const savedDay = String(row['FECHA_GUARDADO_DIA'] || '').trim();
+        if (orderId && savedEstado && savedDay === today) {
+          latestByOrderToday.set(orderId, {
+            estado: savedEstado,
+            savedDay,
+            fechaHora: String(row['FECHA_HORA_GUARDADO'] || ''),
+            observaciones: String(row['OBSERVACIONES'] || ''),
+            fechaReprograma: String(row['FECHA_REPROGRAMA'] || ''),
+            tramo: String(row['TRAMO'] || '')
+          });
+        }
+      });
+
+      masterRecords.forEach(rec => {
+        const orderId = String(rec['Nº'] || '').trim();
+        const info = latestByOrderToday.get(orderId);
+        const isLocalCoordinadoToday =
+          String(rec._savedEstadoToday || '').toUpperCase().trim() === 'COORDINADO' &&
+          rec._savedEstadoDate === today;
+
+        if (info) {
+          rec._savedEstadoToday = info.estado;
+          rec._savedEstadoDate = info.savedDay;
+          rec._savedEstadoMeta = info;
+          if (String(rec['Estado'] || '').toUpperCase().trim() !== info.estado) {
+            rec['Estado'] = info.estado;
+            changed = true;
+          }
+        } else if (isLocalCoordinadoToday) {
+          if (String(rec['Estado'] || '').toUpperCase().trim() !== 'COORDINADO') {
+            rec['Estado'] = 'COORDINADO';
+            changed = true;
+          }
+        } else if (rec._savedEstadoDate && rec._savedEstadoDate !== today) {
+          delete rec._savedEstadoToday;
+          delete rec._savedEstadoDate;
+          delete rec._savedEstadoMeta;
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        saveToStorage();
+      }
+    }
+
+    function buildFullRowSignatureWithoutFechaSolicitud(rowObj) {
+      const src = rowObj && typeof rowObj === 'object' ? rowObj : {};
+      const keysToCompare = EXPECTED_HEADERS.filter(h => h !== 'Fecha Solicitud');
+
+      return keysToCompare
+        .map(k => {
+          let val = String(src[k] || '').replace(/^'+/, '').trim();
+          if (k === 'Estado' && !val && src['ESTADO_GUARDADO']) {
+            val = String(src['ESTADO_GUARDADO'] || '').trim();
+          }
+          return `${k}:${val}`;
+        })
+        .join('||');
+    }
+
+    function isDuplicateInSavedFullExceptFechaSolicitud(rowObj, extraSignatureSet = null) {
+      const newFechaSolicitud = String((rowObj && rowObj['Fecha Solicitud']) || '').replace(/^'+/, '').trim();
+      const sigWithoutFecha = buildFullRowSignatureWithoutFechaSolicitud(rowObj);
+
+      if (extraSignatureSet && extraSignatureSet.has(`${sigWithoutFecha}@@FECHA:${newFechaSolicitud}`)) {
+        return true;
+      }
+
+      return fullSavedRecordsList.some(existing => {
+        const existingFechaSolicitud = String((existing && existing['Fecha Solicitud']) || '').replace(/^'+/, '').trim();
+        const existingSigWithoutFecha = buildFullRowSignatureWithoutFechaSolicitud(existing);
+        return existingSigWithoutFecha === sigWithoutFecha && existingFechaSolicitud === newFechaSolicitud;
+      });
+    }
+
+    async function syncBitacoraFromGoogleSheet(showNotification = false) {
+      if (!GOOGLE_SCRIPT_URL) return false;
+
+      const btn = document.getElementById('btnSyncSheet');
+      if (btn) btn.classList.add('opacity-60', 'pointer-events-none');
+
+      try {
+        const res = await fetch(GOOGLE_SCRIPT_URL, { method: 'GET' });
+        const data = await res.json();
+        if (data && data.ok) {
+          bitacoraReprogramaList = Array.isArray(data.reprogramas) ? data.reprogramas : [];
+          bitacoraCanceladosList = Array.isArray(data.cancelados) ? data.cancelados : [];
+          fullSavedRecordsList = Array.isArray(data.fullRecords) ? data.fullRecords : [];
+          updateFullSavedBadge();
+          applySavedTodayStatesToMaster();
+          refreshAllUI();
+          if (showNotification) {
+            showToast(`Sincronizado: ${fullSavedRecordsList.length} completos, ${bitacoraReprogramaList.length} REPROGRAMA, ${bitacoraCanceladosList.length} CANCELADOS.`, 'success');
+          }
+          return true;
+        } else {
+          throw new Error((data && data.error) || 'Respuesta inválida de Google Sheets');
+        }
+      } catch (err) {
+        console.error('Error sincronizando bitácora:', err);
+        if (showNotification) {
+          showToast('Error al sincronizar con Google Sheets: ' + err.message, 'error');
+        }
+        return false;
+      } finally {
+        if (btn) btn.classList.remove('opacity-60', 'pointer-events-none');
+      }
+    }
+
+    function updateFullSavedBadge() {
+      const badge = document.getElementById('fullSavedCountBadge');
+      if (!badge) return;
+      const n = fullSavedRecordsList.length;
+      badge.textContent = `${n} guardado${n === 1 ? '' : 's'}`;
+    }
+
+    async function saveAllFullRecordsToSheet() {
+      if (!masterRecords || masterRecords.length === 0) {
+        showToast('No hay registros en la Base Principal para guardar.', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('btnSaveAllFull');
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Guardando...';
+      }
+
+      try {
+        if (fullSavedRecordsList.length === 0) {
+          await syncBitacoraFromGoogleSheet(false);
+        }
+
+        const fechaHoraGuardado = formatPeruDateTimeNow();
+        const fechaGuardadoDia = getTodayDdMmYyyy();
+        const batchKeys = new Set();
+        const uniqueToSave = [];
+        let skippedDuplicates = 0;
+
+        masterRecords.forEach(rec => {
+          const estadoUpper = String(rec['Estado'] || '').toUpperCase().trim();
+          const rowObj = {};
+          EXPECTED_HEADERS.forEach(h => {
+            rowObj[h] = h === 'Estado' ? estadoUpper : String(rec[h] || '');
+          });
+          rowObj['ESTADO_GUARDADO'] = estadoUpper;
+          rowObj['FECHA_GUARDADO_DIA'] = fechaGuardadoDia;
+          rowObj['FECHA_HORA_GUARDADO'] = fechaHoraGuardado;
+          rowObj['FECHA_REPROGRAMA'] = String(rec['FECHA_REPROGRAMA'] || '');
+          rowObj['TRAMO'] = String(rec['TRAMO'] || '');
+          rowObj['OBSERVACIONES'] = String(rec['OBSERVACIONES'] || rec._virtualObservaciones || '');
+
+          const fechaSol = String(rowObj['Fecha Solicitud'] || '').replace(/^'+/, '').trim();
+          const key = `${buildFullRowSignatureWithoutFechaSolicitud(rowObj)}@@FECHA:${fechaSol}`;
+
+          if (isDuplicateInSavedFullExceptFechaSolicitud(rowObj, batchKeys)) {
+            skippedDuplicates++;
+            return;
+          }
+
+          batchKeys.add(key);
+          uniqueToSave.push(rowObj);
+        });
+
+        if (uniqueToSave.length === 0) {
+          showToast(`No se guardaron registros nuevos: todos (${skippedDuplicates}) ya existen en REGISTROS_COMPLETOS con los mismos datos y misma Fecha Solicitud.`, 'warning');
+          return;
+        }
+
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'save_all_full',
+            fechaHoraGuardado,
+            fechaGuardadoDia,
+            records: uniqueToSave
+          })
+        });
+
+        const result = await response.json();
+        if (!result || !result.ok) {
+          throw new Error((result && result.error) || 'No se pudo guardar los registros completos');
+        }
+
+        fullSavedRecordsList.push(...uniqueToSave);
+        updateFullSavedBadge();
+
+        const dupMsg = skippedDuplicates > 0 ? ` (${skippedDuplicates} duplicado${skippedDuplicates === 1 ? '' : 's'} omitido${skippedDuplicates === 1 ? '' : 's'})` : '';
+        showToast(`Se agregaron ${uniqueToSave.length} registro${uniqueToSave.length === 1 ? '' : 's'} único${uniqueToSave.length === 1 ? '' : 's'} a REGISTROS_COMPLETOS${dupMsg}.`, 'success');
+      } catch (err) {
+        console.error('Error guardando registros completos:', err);
+        showToast('Error al guardar registros completos: ' + err.message, 'error');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = prevHtml;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    async function handleSearchFullSavedRecord(event) {
+      if (event) event.preventDefault();
+
+      const input = document.getElementById('fullSearchInput');
+      const field = document.getElementById('fullSearchField').value;
+      const rawQuery = (input.value || '').trim();
+
+      if (!rawQuery) {
+        showToast('Ingresa un Orden Nº, Cod. Seguimiento Cliente o DNI/Doc para buscar.', 'warning');
+        input.focus();
+        return;
+      }
+
+      const btn = document.getElementById('btnSearchFullSaved');
+      const prevHtml = btn ? btn.innerHTML : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = 'Buscando...';
+      }
+
+      try {
+        if (fullSavedRecordsList.length === 0) {
+          await syncBitacoraFromGoogleSheet(false);
+        }
+
+        const qNorm = rawQuery.toLowerCase();
+        const qExactNum = normalizeExactDni(rawQuery);
+
+        const match = fullSavedRecordsList.find(row => {
+          const ordenVal = normalizeExactDni(row['Nº'] || row['ORDEN'] || row['OrdenId'] || '');
+          const codVal = String(row['Cod Seguimiento Cliente'] || row['CODIGO'] || row['CodiSeguiClien'] || '').trim().toLowerCase();
+          const dniVal = normalizeExactDni(row['Número Documento'] || row['DNI'] || row['DOCUMENTO'] || '');
+
+          const matchOrden = ordenVal !== '' && (ordenVal.toLowerCase() === qNorm || (qExactNum && ordenVal === qExactNum));
+          const matchCodigo = codVal !== '' && (codVal === qNorm || codVal.includes(qNorm));
+          const matchDni = dniVal !== '' && (dniVal.toLowerCase() === qNorm || (qExactNum && dniVal === qExactNum));
+
+          if (field === 'ORDEN') return matchOrden;
+          if (field === 'CODIGO') return matchCodigo;
+          if (field === 'DNI') return matchDni;
+          return matchOrden || matchCodigo || matchDni;
+        });
+
+        if (!match) {
+          showToast(`No se encontró ningún registro completo con "${rawQuery}".`, 'warning');
+          return;
+        }
+
+        openDetailModalFromObject(match, 'REGISTROS_COMPLETOS');
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = prevHtml;
+          lucide.createIcons();
+        }
+      }
+    }
+
+    function normalizeExactDni(val) {
+      if (val === null || val === undefined) return '';
+      return String(val).replace(/^'+/, '').trim();
+    }
+
+    function findBitacoraMatchesForDni(dniRaw) {
+      const targetDni = normalizeExactDni(dniRaw);
+      if (!targetDni) return null;
+
+      const matchesReprograma = bitacoraReprogramaList.filter(row => {
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO'] || row['Número Documento']);
+        return rowDni !== '' && rowDni === targetDni;
+      });
+
+      const matchesCancelados = bitacoraCanceladosList.filter(row => {
+        const rowDni = normalizeExactDni(row['DNI'] || row['DOCUMENTO'] || row['Número Documento']);
+        return rowDni !== '' && rowDni === targetDni;
+      });
+
+      if (matchesReprograma.length === 0 && matchesCancelados.length === 0) {
+        return null;
+      }
+
+      return {
+        reprogramaRows: matchesReprograma,
+        canceladosRows: matchesCancelados,
+        totalCount: matchesReprograma.length + matchesCancelados.length
+      };
+    }
+
+    function extractHistoryTimestampMs(entryText) {
+      const m = String(entryText || '').match(/(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{2}(?::\d{2})?)/);
+      if (!m) return null;
+      const dt = parseFechaPeru(`${m[1]} ${m[2]}`);
+      return dt ? dt.getTime() : null;
+    }
+
+    function buildDetailPanelHtml(rec) {
+      const historyItems = (rec['Historial de Estados'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      let latestHistoryIndex = -1;
+      let maxHistoryTime = -Infinity;
+      historyItems.forEach((item, idx) => {
+        const ts = extractHistoryTimestampMs(item);
+        if (ts !== null && ts >= maxHistoryTime) {
+          maxHistoryTime = ts;
+          latestHistoryIndex = idx;
+        }
+      });
+      if (latestHistoryIndex === -1 && historyItems.length > 0) {
+        latestHistoryIndex = historyItems.length - 1;
+      }
+
+      const subItems = (rec['Suscripción'] || '')
+        .split('|')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const techItems = (rec['Datos Técnicos'] || '')
+        .split(';')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const dil = calculateDilacion(rec);
+
+      const virtualObs = rec._virtualObservaciones || '';
+      const virtualTime = rec._virtualUpdatedAt || '';
+      const hasSheetSavedFields = Boolean(rec['ESTADO_GUARDADO'] || rec['FECHA_HORA_GUARDADO'] || rec['OBSERVACIONES'] || rec['FECHA_REPROGRAMA'] || rec['TRAMO']);
+
+      const extraSavedInfo = (hasSheetSavedFields || virtualObs)
+        ? `
+          <div class="bg-brand-50/70 rounded-xl p-4 border border-brand-200 space-y-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+              <i data-lucide="bookmark-check" class="w-4 h-4"></i> ${hasSheetSavedFields ? 'Registro Guardado en Google Sheets' : 'Observación Persistente (Local)'}
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              ${rec['ESTADO_GUARDADO'] ? `<div><span class="text-slate-500 block">Estado Guardado</span><strong class="text-slate-900">${escapeHtml(rec['ESTADO_GUARDADO'])}</strong></div>` : ''}
+              ${rec['FECHA_HORA_GUARDADO'] ? `<div><span class="text-slate-500 block">Fecha y Hora Guardado</span><span class="font-mono text-slate-800">${escapeHtml(rec['FECHA_HORA_GUARDADO'])}</span></div>` : ''}
+              ${rec['FECHA_REPROGRAMA'] ? `<div><span class="text-slate-500 block">Fecha Reprograma</span><strong class="text-slate-900">${escapeHtml(rec['FECHA_REPROGRAMA'])}</strong></div>` : ''}
+              ${rec['TRAMO'] ? `<div><span class="text-slate-500 block">Tramo</span><strong class="text-slate-900">${escapeHtml(rec['TRAMO'])}</strong></div>` : ''}
+              ${rec['OBSERVACIONES'] ? `<div class="sm:col-span-2"><span class="text-slate-500 block">Observaciones (Sheets)</span><strong class="text-slate-900">${escapeHtml(rec['OBSERVACIONES'])}</strong></div>` : ''}
+              ${virtualObs && virtualObs !== rec['OBSERVACIONES'] ? `
+                <div class="sm:col-span-2 ${rec['OBSERVACIONES'] ? 'pt-2 border-t border-brand-200/70' : ''}">
+                  <span class="text-slate-500 block">Observación Coordinación (Persistente${virtualTime ? ` • ${escapeHtml(virtualTime)}` : ''})</span>
+                  <strong class="text-slate-900">${escapeHtml(virtualObs)}</strong>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `
+        : '';
+
+      return `
+        ${extraSavedInfo}
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1.5">
+            <i data-lucide="truck" class="w-4 h-4"></i> Asignación y Agenda
+          </h4>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Cuadrilla Asignada</span><strong class="text-slate-900">${escapeHtml(rec['Cuadrilla'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Visita</span><strong class="text-slate-900">${escapeHtml(rec['Fecha Visita'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Fecha Solicitud</span><span class="text-slate-800">${escapeHtml(rec['Fecha Solicitud'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Tiempo Transcurrido</span><span class="px-2.5 py-0.5 rounded-lg text-[11px] border ${dil.badgeCls} inline-block font-mono mt-0.5">${dil.texto}</span></div>
+            <div><span class="text-slate-500 block">Prioridad / Tipo Trabajo</span><span class="text-slate-800">${escapeHtml(rec['Prioridad'] || '-')} • ${escapeHtml(rec['Tipo Trabajo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Cod. Seguimiento Cliente</span><span class="font-mono text-slate-800">${escapeHtml(rec['Cod Seguimiento Cliente'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Código De Seguimiento</span><span class="font-mono text-slate-800">${escapeHtml(rec['Código De Seguimiento'] || '-')}</span></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="map-pin" class="w-4 h-4 text-brand-500"></i> Ubicación y Contacto
+            </h4>
+            ${(rec['Georeferencia'] || rec['Cod Seguimiento Cliente'] || rec['Nº']) ? `
+              <a href="${buildMapaTecnicosProvinciaUrl(rec)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
+                Abrir en Mapa <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              </a>
+            ` : ''}
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div><span class="text-slate-500 block">Teléfono Móvil</span><strong class="text-slate-900 font-mono">${escapeHtml(rec['Móvil'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Teléfono Fijo</span><span class="text-slate-800 font-mono">${escapeHtml(rec['Fijo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Sector Operativo</span><span class="text-slate-800">${escapeHtml(rec['Sector Operativo'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Localidad / Región</span><span class="text-slate-800">${escapeHtml(rec['Localidad'] || '-')} (${escapeHtml(rec['Región / Zona'] || '-')})</span></div>
+            <div class="sm:col-span-2"><span class="text-slate-500 block">Dirección Completa</span><strong class="text-slate-900">${escapeHtml(rec['Dirección'] || '-')}</strong></div>
+            <div><span class="text-slate-500 block">Georeferencia</span><span class="font-mono text-slate-700">${escapeHtml(rec['Georeferencia'] || '-')}</span></div>
+            <div><span class="text-slate-500 block">Proveedor / Proyecto</span><span class="text-slate-800">${escapeHtml(rec['Proveedeor'] || '-')} (ID: ${escapeHtml(rec['Id de Proyecto'] || '-')})</span></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="wifi" class="w-4 h-4 text-brand-500"></i> Suscripción y Servicios
+          </h4>
+          ${subItems.length > 0 ? `
+            <div class="flex flex-wrap gap-2">
+              ${subItems.map(item => `<span class="px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 text-xs font-medium">${escapeHtml(item)}</span>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin detalles de suscripción</p>'}
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-4 h-4 text-brand-500"></i> Datos Técnicos (CTOs)
+          </h4>
+          ${techItems.length > 0 ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs font-mono bg-slate-50 p-3 rounded-lg border border-slate-200">
+              ${techItems.map(t => `<div class="text-slate-700 truncate" title="${escapeHtml(t)}">${escapeHtml(t)}</div>`).join('')}
+            </div>
+          ` : '<p class="text-xs text-slate-400">Sin datos técnicos registrados</p>'}
+        </div>
+
+        <div class="bg-white rounded-xl p-4 border border-slate-200 space-y-2.5">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+            <i data-lucide="history" class="w-4 h-4 text-brand-500"></i> Historial de Estados
+          </h4>
+          ${historyItems.length > 0 ? `
+            <ul class="space-y-2 text-xs">
+              ${historyItems.map((h, idx) => {
+                const isLatest = idx === latestHistoryIndex;
+                const boxCls = isLatest
+                  ? 'p-2.5 rounded-lg bg-rose-50/50 border-2 border-rose-500 ring-2 ring-rose-500/35 text-slate-900 font-medium leading-relaxed'
+                  : 'p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 leading-relaxed';
+                return `
+                  <li class="${boxCls}">
+                    ${escapeHtml(h)}
+                  </li>
+                `;
+              }).join('')}
+            </ul>
+          ` : '<p class="text-xs text-slate-400">Sin historial disponible</p>'}
+        </div>
+      `;
+    }
+
+    function renderSheetCardsHtml(rows, sheetName, accentType) {
+      const isReprog = accentType === 'reprograma';
+      return rows.map((row, index) => {
+        const entries = Object.entries(row);
+        return `
+          <div class="bg-white rounded-xl border ${isReprog ? 'border-brand-200' : 'border-rose-200'} p-4 shadow-2xs space-y-2.5">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+              <span class="text-xs font-extrabold uppercase ${isReprog ? 'text-brand-600' : 'text-rose-600'}">
+                ${escapeHtml(sheetName)} #${index + 1} • ${escapeHtml(row['ESTADO'] || sheetName)}
+              </span>
+              <span class="text-[11px] font-mono text-slate-500">
+                ${escapeHtml(row['FECHA Y HORA GUARDADO'] || '')}
+              </span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+              ${entries.map(([key, val]) => `
+                <div class="bg-slate-50/90 rounded-lg px-2.5 py-1.5 border border-slate-200/70 ${key === 'OBSERVACIONES' ? 'sm:col-span-2 lg:col-span-3' : ''}">
+                  <span class="text-[10px] font-bold uppercase text-slate-400 block">${escapeHtml(key)}</span>
+                  <strong class="text-slate-900 font-mono break-words">${escapeHtml(val || '—')}</strong>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openBitacoraModal(dniRaw) {
+      const targetDni = normalizeExactDni(dniRaw);
+      const matchData = findBitacoraMatchesForDni(targetDni);
+      if (!matchData) return;
+
+      const hasReprog = matchData.reprogramaRows.length > 0;
+      const hasCancel = matchData.canceladosRows.length > 0;
+
+      const badge = document.getElementById('bitacoraSourceBadge');
+      const iconHeader = document.getElementById('bitacoraIconHeader');
+
+      if (hasReprog && hasCancel) {
+        badge.textContent = 'REPROGRAMA + CANCELADOS';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0';
+      } else if (hasReprog) {
+        badge.textContent = 'HOJA: REPROGRAMA';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-brand-500 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0';
+      } else {
+        badge.textContent = 'HOJA: CANCELADOS';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-600 text-white';
+        iconHeader.className = 'w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0';
+      }
+
+      document.getElementById('bitacoraSubtitle').textContent = `DOCUMENTO / DNI: ${targetDni}`;
+      document.getElementById('bitacoraCountFooter').textContent =
+        `${matchData.totalCount} registro${matchData.totalCount === 1 ? '' : 's'} (${matchData.reprogramaRows.length} REPROGRAMA • ${matchData.canceladosRows.length} CANCELADOS)`;
+
+      const sectionsHtml = [];
+
+      if (hasReprog) {
+        sectionsHtml.push(`
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-extrabold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                Detalle Hoja REPROGRAMA (${matchData.reprogramaRows.length})
+              </h4>
+            </div>
+            ${renderSheetCardsHtml(matchData.reprogramaRows, 'REPROGRAMA', 'reprograma')}
+          </div>
+        `);
+      }
+
+      if (hasCancel) {
+        sectionsHtml.push(`
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-extrabold uppercase tracking-wider text-rose-700 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+                Detalle Hoja CANCELADOS (${matchData.canceladosRows.length})
+              </h4>
+            </div>
+            ${renderSheetCardsHtml(matchData.canceladosRows, 'CANCELADOS', 'cancelados')}
+          </div>
+        `);
+      }
+
+      document.getElementById('bitacoraModalBody').innerHTML = sectionsHtml.join('');
+
+      const modal = document.getElementById('bitacoraModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeBitacoraModal() {
+      const modal = document.getElementById('bitacoraModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function openActionStatusModal(orderNumber) {
+      const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
+      if (!rec) return;
+
+      activeActionRecord = rec;
+
+      const ordenExacta = String(rec['Nº'] || '').trim();
+      const codigoExacto = String(rec['Cod Seguimiento Cliente'] || '').trim();
+      const dniExacto = normalizeExactDni(rec['Número Documento']);
+
+      document.getElementById('actOrdenDisplay').textContent = ordenExacta || '—';
+      document.getElementById('actCodigoDisplay').textContent = codigoExacto || '—';
+      document.getElementById('actDniDisplay').textContent = dniExacto || '—';
+
+      const selectEl = document.getElementById('actEstadoSelect');
+      const currentUpper = String(rec['Estado'] || '').toUpperCase().trim();
+      const hasOption = Array.from(selectEl.options).some(opt => opt.value === currentUpper);
+      selectEl.value = hasOption ? currentUpper : 'COORDINADO';
+
+      document.getElementById('actCustomEstadoInput').value = '';
+      document.getElementById('actFechaReprograma').value = '';
+      document.getElementById('actTramoSelect').value = '';
+      document.getElementById('actObservaciones').value = rec._virtualObservaciones || '';
+
+      handleActionEstadoChange();
+
+      const modal = document.getElementById('actionStatusModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeActionStatusModal() {
+      const modal = document.getElementById('actionStatusModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      activeActionRecord = null;
+    }
+
+    function handleActionEstadoChange() {
+      const selected = document.getElementById('actEstadoSelect').value;
+      const isCoordinado = selected === 'COORDINADO';
+      const isReprograma = selected === 'REPROGRAMA';
+      const isOtro = selected === 'OTRO ESTADO';
+
+      const reprogFields = document.getElementById('actReprogramaFields');
+      const fechaInput = document.getElementById('actFechaReprograma');
+      const tramoSelect = document.getElementById('actTramoSelect');
+      const customContainer = document.getElementById('actCustomEstadoContainer');
+      const customInput = document.getElementById('actCustomEstadoInput');
+      const targetBadge = document.getElementById('actTargetSheetBadge');
+
+      if (isReprograma) {
+        reprogFields.classList.remove('hidden');
+        reprogFields.classList.add('grid');
+        fechaInput.required = true;
+        tramoSelect.required = true;
+        targetBadge.textContent = 'Guarda en REPROGRAMA + REGISTROS_COMPLETOS (único)';
+        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800';
+      } else {
+        reprogFields.classList.add('hidden');
+        reprogFields.classList.remove('grid');
+        fechaInput.required = false;
+        tramoSelect.required = false;
+
+        if (isCoordinado) {
+          targetBadge.textContent = 'Solo persistencia virtual local (no guarda en Google Sheets)';
+          targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800';
+        } else {
+          targetBadge.textContent = 'Guarda en CANCELADOS + REGISTROS_COMPLETOS (único)';
+          targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800';
+        }
+      }
+
+      if (isOtro) {
+        customContainer.classList.remove('hidden');
+        customInput.required = true;
+      } else {
+        customContainer.classList.add('hidden');
+        customInput.required = false;
+      }
+    }
+
+    function formatDateToDdMmYyyy(isoDate) {
+      if (!isoDate) return '';
+      const parts = isoDate.split('-');
+      if (parts.length !== 3) return isoDate;
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+
+    function formatPeruDateTimeNow() {
+      const d = new Date();
+      const p = n => String(n).padStart(2, '0');
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+    }
+
+    async function submitActionStatusForm(event) {
+      event.preventDefault();
+      if (!activeActionRecord) return;
+
+      const selected = document.getElementById('actEstadoSelect').value;
+      const finalEstado = (selected === 'OTRO ESTADO'
+        ? document.getElementById('actCustomEstadoInput').value
+        : selected).toUpperCase().trim();
+
+      if (!finalEstado) {
+        showToast('Debes ingresar el estado en mayúsculas.', 'warning');
+        return;
+      }
+
+      const observacionesUpper = document.getElementById('actObservaciones').value.toUpperCase().trim();
+      const fechaHoraGuardado = formatPeruDateTimeNow();
+      const fechaGuardadoDia = getTodayDdMmYyyy();
+
+      if (finalEstado === 'COORDINADO') {
+        activeActionRecord['Estado'] = 'COORDINADO';
+        activeActionRecord._savedEstadoToday = 'COORDINADO';
+        activeActionRecord._savedEstadoDate = fechaGuardadoDia;
+        activeActionRecord._virtualObservaciones = observacionesUpper;
+        activeActionRecord._virtualUpdatedAt = fechaHoraGuardado;
+        activeActionRecord._updatedAt = fechaHoraGuardado;
+        saveToStorage();
+        closeActionStatusModal();
+        refreshAllUI();
+        showToast('Estado COORDINADO guardado virtualmente con persistencia local (no se envió a Google Sheets).', 'info');
+        return;
+      }
+
+      const isReprograma = finalEstado === 'REPROGRAMA';
+      const targetStatusSheet = isReprograma ? 'REPROGRAMA' : 'CANCELADOS';
+      const fechaReprogramaRaw = document.getElementById('actFechaReprograma').value;
+      const fechaReprogramaFormatted = isReprograma ? formatDateToDdMmYyyy(fechaReprogramaRaw) : '';
+      const tramoUpper = isReprograma ? document.getElementById('actTramoSelect').value.toUpperCase().trim() : '';
+
+      const ordenStr = String(activeActionRecord['Nº'] || '').trim();
+      const codigoStr = String(activeActionRecord['Cod Seguimiento Cliente'] || '').trim();
+      const dniStr = normalizeExactDni(activeActionRecord['Número Documento']);
+
+      const fullRecordPayload = {};
+      EXPECTED_HEADERS.forEach(h => {
+        fullRecordPayload[h] = h === 'Estado' ? finalEstado : String(activeActionRecord[h] || '');
+      });
+      fullRecordPayload['ESTADO_GUARDADO'] = finalEstado;
+      fullRecordPayload['FECHA_REPROGRAMA'] = fechaReprogramaFormatted;
+      fullRecordPayload['TRAMO'] = tramoUpper;
+      fullRecordPayload['OBSERVACIONES'] = observacionesUpper;
+
+      const btnSave = document.getElementById('btnSaveActionStatus');
+      const prevBtnHtml = btnSave.innerHTML;
+      btnSave.disabled = true;
+      btnSave.innerHTML = 'Guardando...';
+
+      try {
+        if (fullSavedRecordsList.length === 0) {
+          await syncBitacoraFromGoogleSheet(false);
+        }
+
+        const skipFullDuplicate = isDuplicateInSavedFullExceptFechaSolicitud(fullRecordPayload);
+
+        const payload = {
+          orden: ordenStr,
+          codigo: codigoStr,
+          dni: dniStr,
+          estado: finalEstado,
+          targetSheet: targetStatusSheet,
+          fechaReprograma: fechaReprogramaFormatted,
+          tramo: tramoUpper,
+          observaciones: observacionesUpper,
+          fechaHoraGuardado: fechaHoraGuardado,
+          fechaGuardadoDia: fechaGuardadoDia,
+          skipFullRecord: skipFullDuplicate,
+          fullRecord: fullRecordPayload
+        };
+
+        const response = await fetch(GOOGLE_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (!result || !result.ok) {
+          throw new Error((result && result.error) || 'No se pudo confirmar el guardado en Google Sheets');
+        }
+
+        activeActionRecord['Estado'] = finalEstado;
+        activeActionRecord._savedEstadoToday = finalEstado;
+        activeActionRecord._savedEstadoDate = fechaGuardadoDia;
+        activeActionRecord._updatedAt = fechaHoraGuardado;
+        saveToStorage();
+
+        if (!skipFullDuplicate) {
+          fullSavedRecordsList.push({
+            ...fullRecordPayload,
+            'ESTADO_GUARDADO': finalEstado,
+            'FECHA_GUARDADO_DIA': fechaGuardadoDia,
+            'FECHA_HORA_GUARDADO': fechaHoraGuardado,
+            'FECHA_REPROGRAMA': fechaReprogramaFormatted,
+            'TRAMO': tramoUpper,
+            'OBSERVACIONES': observacionesUpper
+          });
+          updateFullSavedBadge();
+        }
+
+        if (isReprograma) {
+          bitacoraReprogramaList.push({
+            'ORDEN': ordenStr,
+            'CODIGO': codigoStr,
+            'DNI': dniStr,
+            'ESTADO': finalEstado,
+            'FECHA REPROGRAMA': fechaReprogramaFormatted,
+            'TRAMO': tramoUpper,
+            'OBSERVACIONES': observacionesUpper,
+            'FECHA Y HORA GUARDADO': fechaHoraGuardado
+          });
+        } else {
+          bitacoraCanceladosList.push({
+            'ORDEN': ordenStr,
+            'CODIGO': codigoStr,
+            'DNI': dniStr,
+            'ESTADO': finalEstado,
+            'OBSERVACIONES': observacionesUpper,
+            'FECHA Y HORA GUARDADO': fechaHoraGuardado
+          });
+        }
+
+        closeActionStatusModal();
+        refreshAllUI();
+
+        if (skipFullDuplicate) {
+          showToast(`Guardado en ${targetStatusSheet} (${finalEstado}). Omitido en REGISTROS_COMPLETOS por tener los mismos datos y misma Fecha Solicitud.`, 'info');
+        } else {
+          showToast(`¡Guardado! Estado ${finalEstado} registrado en ${targetStatusSheet} y en REGISTROS_COMPLETOS.`, 'success');
+        }
+      } catch (err) {
+        console.error('Error guardando en Google Sheets:', err);
+        showToast('Error al guardar en Google Sheets: ' + err.message, 'error');
+      } finally {
+        btnSave.disabled = false;
+        btnSave.innerHTML = prevBtnHtml;
+        lucide.createIcons();
+      }
+    }
+
+    function renderTableHeaders() {
+      const masterHead = document.getElementById('masterTableHead');
+      const actionHeaderHtml = `<th class="py-3.5 px-2.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 text-center text-slate-800" title="Acción"></th>`;
+
+      masterHead.innerHTML = actionHeaderHtml + EXPECTED_HEADERS.map((header, idx) => {
+        const displayLabel = DISPLAY_HEADER_ALIASES[header] || header;
+
+        if (idx === 0) {
+          return `<th class="py-3.5 px-3.5 whitespace-nowrap sticky left-[42px] z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] text-slate-800">${escapeHtml(displayLabel)}</th>`;
+        }
+        if (header === 'Estado') {
+          return `<th class="py-3.5 px-3.5 whitespace-nowrap text-slate-800">${escapeHtml(displayLabel)}</th><th class="py-3.5 px-3.5 whitespace-nowrap text-brand-600" title="Indicador visual en web (En camino límite 40m / En proceso límite 2h)">Duración</th>`;
+        }
+        const minWidthClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+          ? 'min-w-[260px]'
+          : '';
+        return `<th class="py-3.5 px-3.5 whitespace-nowrap ${minWidthClass}">${escapeHtml(displayLabel)}</th>`;
+      }).join('') + `<th class="py-3.5 px-3.5 whitespace-nowrap text-right">Ficha</th>`;
+
+      const compHead = document.getElementById('compNewTableHead');
+      compHead.innerHTML = EXPECTED_HEADERS.map((header, idx) => {
+        if (idx === 0) {
+          return `<th class="py-2.5 px-3 whitespace-nowrap sticky left-0 z-30 bg-emerald-50 border-r border-emerald-200">${escapeHtml(header)}</th>`;
+        }
+        return `<th class="py-2.5 px-3 whitespace-nowrap">${escapeHtml(header)}</th>`;
+      }).join('');
+    }
+
+    function loadFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            masterRecords = parsed;
+          }
+        }
+      } catch (err) {
+        console.error('Error leyendo localStorage:', err);
+      }
+    }
+
+    function saveToStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(masterRecords));
+      } catch (err) {
+        console.error('Error guardando en localStorage:', err);
+        showToast('No se pudo guardar en memoria local (límite excedido)', 'error');
+      }
+    }
+
+    function setupPasteListeners() {
+      const textarea = document.getElementById('pasteInput');
+      const clearBtn = document.getElementById('clearInputBtn');
+
+      textarea.addEventListener('input', () => {
+        clearBtn.classList.toggle('hidden', textarea.value.trim().length === 0);
+      });
+
+      textarea.addEventListener('paste', () => {
+        setTimeout(() => {
+          clearBtn.classList.toggle('hidden', textarea.value.trim().length === 0);
+          if (document.getElementById('autoProcessToggle').checked && textarea.value.trim()) {
+            processPastedData();
+          }
+        }, 60);
+      });
+    }
+
+    function clearTextarea() {
+      const textarea = document.getElementById('pasteInput');
+      textarea.value = '';
+      document.getElementById('clearInputBtn').classList.add('hidden');
+      textarea.focus();
+    }
+
+    function parseFechaPeru(str) {
+      if (!str) return null;
+      str = String(str).trim();
+      if (!str) return null;
+
+      const m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+      if (!m) return null;
+
+      const [, d, mo, y, hh, mm, ss] = m;
+      const dt = new Date(
+        parseInt(y, 10),
+        parseInt(mo, 10) - 1,
+        parseInt(d, 10),
+        hh ? parseInt(hh, 10) : 0,
+        mm ? parseInt(mm, 10) : 0,
+        ss ? parseInt(ss, 10) : 0
+      );
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+
+    function formatoHM(minutos) {
+      minutos = Math.max(0, Math.round(minutos));
+      const h = Math.floor(minutos / 60), m = minutos % 60;
+      return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+    }
+
+    function calculateDilacion(rec) {
+      const estadoRaw = String(rec['Estado'] || '').toUpperCase().trim();
+      const isEnCamino = estadoRaw === 'EN CAMINO';
+      const isEnProceso = estadoRaw === 'EN PROCESO' || estadoRaw === 'INICIADA';
+
+      if (!isEnCamino && !isEnProceso) {
+        return {
+          texto: '—',
+          nivel: 'inactivo',
+          deltaMin: -1,
+          isAlert: false,
+          badgeCls: 'bg-slate-50 text-slate-400 border-slate-200/80'
+        };
+      }
+
+      let fechaRef = parseFechaPeru(rec['Fecha Estado']);
+      if (!fechaRef && rec['Historial de Estados']) {
+        const matches = [...String(rec['Historial de Estados']).matchAll(/Fecha:\s*(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}(?::\d{2})?)/g)];
+        if (matches.length > 0) {
+          fechaRef = parseFechaPeru(matches[matches.length - 1][1]);
+        }
+      }
+
+      if (!fechaRef) {
+        return {
+          texto: 'Sin hora',
+          nivel: 'normal',
+          deltaMin: 0,
+          isAlert: false,
+          badgeCls: 'bg-slate-100 text-slate-500 border-slate-200'
+        };
+      }
+
+      const ahora = new Date();
+      const deltaMin = Math.max(0, (ahora - fechaRef) / 60000);
+      const transcurridoTexto = formatoHM(deltaMin);
+      const [umbralAmarillo, umbralRojo] = isEnCamino ? [30, 40] : [90, 120];
+
+      if (deltaMin > umbralRojo) {
+        return {
+          texto: `🚨 ALERTA • ${transcurridoTexto}`,
+          nivel: 'rojo',
+          deltaMin,
+          isAlert: true,
+          badgeCls: 'bg-gradient-to-r from-rose-600 to-red-600 text-white border-rose-700 font-extrabold shadow-sm shadow-rose-500/30 alert-rojo'
+        };
+      } else if (deltaMin >= umbralAmarillo) {
+        return {
+          texto: `⚠️ ${transcurridoTexto}`,
+          nivel: 'amarillo',
+          deltaMin,
+          isAlert: false,
+          badgeCls: 'bg-amber-100/90 text-amber-900 border-amber-400 font-bold shadow-2xs'
+        };
+      } else {
+        return {
+          texto: `⏱️ ${transcurridoTexto}`,
+          nivel: 'normal',
+          deltaMin,
+          isAlert: false,
+          badgeCls: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
+        };
+      }
+    }
+
+    function parseRawPastedText(rawText) {
+      if (!rawText || !rawText.trim()) return [];
+
+      const normalized = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = normalized.split('\n');
+
+      const followUpRecords = parseFollowUpTableFormat(normalized);
+      if (followUpRecords.length > 0) {
+        return followUpRecords;
+      }
+
+      const nonEmptyLines = lines.filter(l => l.trim().length > 0);
+      const tsvDataLines = nonEmptyLines.filter(l => {
+        const parts = l.split('\t');
+        const firstNonEmpty = parts[0].trim() === '' ? (parts[1] || '').trim() : parts[0].trim();
+        return parts.length >= 10 && /^\d{5,10}$/.test(firstNonEmpty);
+      });
+
+      if (tsvDataLines.length > 0) {
+        return parseTsvFormat(nonEmptyLines);
+      }
+
+      return parseMultilineSgiFormat(lines);
+    }
+
+    function parseFollowUpTableFormat(normalizedText) {
+      if (!/Tabla de seguimiento de cliente/i.test(normalizedText) && !/\d+\s+\t?\s*(?:Cod\.?\s*Seguimiento\s*Cliente|Número\s*Documento|Sector\s*Operativo)/i.test(normalizedText)) {
+        return [];
+      }
+
+      const lines = normalizedText.split('\n').map(l => l.replace(/\r/g, ''));
+      const records = [];
+      let currentRec = null;
+      let section = 'none';
+      const historyEntries = [];
+      const techEntries = [];
+
+      const finalizeCurrent = () => {
+        if (!currentRec || !currentRec['Nº']) return;
+
+        if (!currentRec['Suscripción'] && techEntries.length > 0) {
+          currentRec['Suscripción'] = techEntries.map(t => `${t.param}: ${t.val}`).join(' | ');
+        }
+
+        if (techEntries.length > 0) {
+          const formattedTech = techEntries
+            .map(t => `${t.param}/${t.type || 'Texto'}/${t.val}`)
+            .join(';');
+          currentRec['Datos Técnicos'] = currentRec['Datos Técnicos']
+            ? `${currentRec['Datos Técnicos']} | ${formattedTech}`
+            : formattedTech;
+        }
+
+        if (historyEntries.length > 0) {
+          const histText = historyEntries
+            .map(h => `Fecha: ${h.date} Estado: ${h.status} Usuario: ${h.user} Observacion: ${h.obs}`)
+            .join(';');
+          currentRec['Historial de Estados'] = currentRec['Historial de Estados']
+            ? `${currentRec['Historial de Estados']};${histText}`
+            : histText;
+        }
+
+        records.push(currentRec);
+      };
+
+      const cleanDash = (v) => {
+        const t = (v || '').trim();
+        return (t === '—' || t === '-') ? '' : t;
+      };
+
+      for (let i = 0; i < lines.length; i++) {
+        const rawLine = lines[i].trim();
+        if (!rawLine) continue;
+
+        if (/^Tabla de seguimiento de cliente$/i.test(rawLine)) {
+          section = 'follow';
+          continue;
+        }
+        if (/^Historial de estados$/i.test(rawLine)) {
+          section = 'history';
+          continue;
+        }
+        if (/^Datos t[eé]cnicos detallados$/i.test(rawLine)) {
+          section = 'tech';
+          continue;
+        }
+
+        if (/^Nº\s+Información\s+Valor$/i.test(rawLine) || /^Información\s+Valor$/i.test(rawLine)) continue;
+        if (/^Fecha y hora\s+Estado\s+Usuario\s+Observación$/i.test(rawLine)) continue;
+        if (/^Parámetro\s+Tipo\s+Valor$/i.test(rawLine)) continue;
+
+        if (section === 'follow' || section === 'none') {
+          let parts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          if (parts.length >= 3 && /^\d+$/.test(parts[0])) {
+            const label = parts[1];
+            const val = cleanDash(parts.slice(2).join(' '));
+
+            if (/^Nº$/i.test(label)) {
+              if (currentRec && currentRec['Nº']) {
+                finalizeCurrent();
+                historyEntries.length = 0;
+                techEntries.length = 0;
+              }
+              currentRec = createEmptyRecord();
+              currentRec['Nº'] = val;
+              section = 'follow';
+              continue;
+            }
+
+            if (currentRec) {
+              assignFollowUpField(currentRec, label, val);
+              continue;
+            }
+          }
+
+          if (parts.length >= 2 && !/^\d{2}\/\d{2}\/\d{4}/.test(parts[0])) {
+            const label = parts[0];
+            const val = cleanDash(parts.slice(1).join(' '));
+            if (/^Nº$/i.test(label) && val) {
+              if (currentRec && currentRec['Nº']) {
+                finalizeCurrent();
+                historyEntries.length = 0;
+                techEntries.length = 0;
+              }
+              currentRec = createEmptyRecord();
+              currentRec['Nº'] = val;
+              section = 'follow';
+              continue;
+            }
+            if (currentRec) {
+              assignFollowUpField(currentRec, label, val);
+              continue;
+            }
+          }
+        }
+
+        if (section === 'history' && currentRec) {
+          const hParts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          if (hParts.length >= 2 && /^\d{2}\/\d{2}\/\d{4}/.test(hParts[0])) {
+            historyEntries.push({
+              date: hParts[0] || '',
+              status: hParts[1] || '',
+              user: hParts[2] || '',
+              obs: cleanDash(hParts.slice(3).join(' '))
+            });
+          }
+          continue;
+        }
+
+        if (section === 'tech' && currentRec) {
+          const tParts = rawLine.includes('\t')
+            ? rawLine.split('\t').map(p => p.trim())
+            : rawLine.split(/\s{2,}/).map(p => p.trim());
+
+          if (tParts.length >= 2) {
+            techEntries.push({
+              param: tParts[0] || '',
+              type: tParts.length >= 3 ? (tParts[1] || '') : '',
+              val: cleanDash(tParts.length >= 3 ? tParts.slice(2).join(' ') : tParts[1])
+            });
+          }
+          continue;
+        }
+      }
+
+      finalizeCurrent();
+      return records;
+    }
+
+    function assignFollowUpField(rec, label, val) {
+      const norm = label
+        .toLowerCase()
+        .replace(/\./g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const map = {
+        'n': 'Nº',
+        'cod seguimiento cliente': 'Cod Seguimiento Cliente',
+        'codigo seguimiento cliente': 'Cod Seguimiento Cliente',
+        'numero documento': 'Número Documento',
+        'estado': 'Estado',
+        'cuadrilla': 'Cuadrilla',
+        'fecha solicitud': 'Fecha Solicitud',
+        'pais / empresa': 'País / Empresa',
+        'pais empresa': 'País / Empresa',
+        'cliente': 'Cliente',
+        'producto': 'Producto',
+        'tipo ubicacion': 'Tipo Ubicación',
+        'ubicacion': 'Ubicación',
+        'motivo regestion': 'Motivo Regestión',
+        'sector operativo': 'Sector Operativo',
+        'tipo orden': 'Tipo Orden',
+        'tipo trabajo': 'Tipo Trabajo',
+        'motivo trabajo': 'Motivo Trabajo',
+        'localidad': 'Localidad',
+        'direccion': 'Dirección',
+        'codigo de seguimiento': 'Código De Seguimiento',
+        'fecha visita': 'Fecha Visita',
+        'region / zona': 'Región / Zona',
+        'region zona': 'Región / Zona',
+        'tipo documento': 'Tipo Documento',
+        'prioridad': 'Prioridad',
+        'movil': 'Móvil',
+        'fijo': 'Fijo',
+        'inicio de visita': 'Inicio de Visita',
+        'fin de visita': 'Fin de Visita',
+        'motivo de cancelacion': 'Motivo de Cancelación',
+        'motivo de finalizacion': 'Motivo de Finalización',
+        'motivo de anulacion': 'Motivo de Anulación',
+        'motivo de suspension': 'Motivo de Suspensión',
+        'georeferencia': 'Georeferencia',
+        'proveedor': 'Proveedeor',
+        'proveedeor': 'Proveedeor',
+        'id de proyecto': 'Id de Proyecto',
+        'codigo postal': 'Código Postal',
+        'motivo': 'Motivo',
+        'datos tecnicos': 'Datos Técnicos',
+        'fecha estado': 'Fecha Estado',
+        'suscripcion': 'Suscripción',
+        'historial de estados': 'Historial de Estados',
+        'email': 'Email'
+      };
+
+      const targetHeader = map[norm];
+      if (targetHeader && Object.prototype.hasOwnProperty.call(rec, targetHeader)) {
+        rec[targetHeader] = val;
+      }
+    }
+
+    function parseTsvFormat(nonEmptyLines) {
+      let headers = EXPECTED_HEADERS;
+      const records = [];
+
+      for (const line of nonEmptyLines) {
+        const cells = line.split('\t').map(c => c.trim());
+        if (cells.includes('Cod Seguimiento Cliente') || cells[0] === 'Nº' || (cells[0] === '' && cells[1] === 'Nº')) {
+          const cleanHeaders = cells[0] === '' ? cells.slice(1) : cells;
+          if (cleanHeaders.length >= 10) headers = cleanHeaders;
+          continue;
+        }
+
+        const offset = cells[0] === '' ? 1 : 0;
+        const firstVal = cells[offset];
+
+        if (firstVal && /^\d{5,10}$/.test(firstVal)) {
+          const obj = createEmptyRecord();
+          headers.forEach((h, idx) => {
+            const key = matchHeaderKey(h);
+            if (key && cells[idx + offset] !== undefined) {
+              obj[key] = cells[idx + offset];
+            }
+          });
+          obj['Nº'] = firstVal;
+          records.push(obj);
+        }
+      }
+      return records;
+    }
+
+    function parseMultilineSgiFormat(lines) {
+      const filteredLines = [];
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.includes('Cod Seguimiento Cliente') && trimmed.includes('Número Documento')) {
+          continue;
+        }
+        filteredLines.push(lines[i]);
+      }
+
+      const startIndices = [];
+      for (let i = 0; i < filteredLines.length; i++) {
+        const val = filteredLines[i].trim();
+        if (/^\d{6,9}$/.test(val)) {
+          const next1 = (filteredLines[i + 1] || '').trim();
+          const next2 = (filteredLines[i + 2] || '').trim();
+          if (/^\d{5,10}$/.test(next1) && /^\d{6,12}$/.test(next2)) {
+            startIndices.push(i);
+          }
+        }
+      }
+
+      const records = [];
+
+      for (let s = 0; s < startIndices.length; s++) {
+        const start = startIndices[s];
+        const end = s + 1 < startIndices.length ? startIndices[s + 1] : filteredLines.length;
+        const block = filteredLines.slice(start, end).map(l => l.trim());
+
+        const rec = extractRecordFromBlock(block);
+        if (rec && rec['Nº']) {
+          records.push(rec);
+        }
+      }
+
+      return records;
+    }
+
+    function extractRecordFromBlock(block) {
+      const rec = createEmptyRecord();
+
+      while (block.length > 0 && block[block.length - 1] === '') {
+        block.pop();
+      }
+
+      rec['Nº'] = block[0] || '';
+      rec['Cod Seguimiento Cliente'] = block[1] || '';
+      rec['Número Documento'] = block[2] || '';
+      rec['Estado'] = block[3] || '';
+      rec['Cuadrilla'] = block[4] || '';
+      rec['Fecha Solicitud'] = block[5] || '';
+
+      const rest = block.slice(6);
+
+      let clientIdx = -1;
+      let initialsIdx = -1;
+
+      for (let i = 0; i < Math.min(rest.length, 8); i++) {
+        const line = rest[i];
+        if (!line) continue;
+        if (/^[A-ZÑÁÉÍÓÚ]{2,3}$/.test(line) && rest[i + 1] && rest[i + 1].length > 4) {
+          initialsIdx = i;
+          clientIdx = i + 1;
+          rec['Cliente'] = rest[i + 1];
+          break;
+        }
+        if (/^[A-ZÑÁÉÍÓÚ\s]{6,}$/.test(line) && line !== 'GESTIÓN PROVINCIA' && line !== 'GESTION PROVINCIA' && line !== 'PERÚ' && line !== 'PERU') {
+          clientIdx = i;
+          rec['Cliente'] = line;
+          break;
+        }
+      }
+
+      const countryEnd = initialsIdx !== -1 ? initialsIdx : (clientIdx !== -1 ? clientIdx : 3);
+      const countryLines = rest.slice(0, countryEnd).filter(Boolean);
+      rec['País / Empresa'] = countryLines.join(' / ');
+
+      const afterClient = clientIdx !== -1 ? rest.slice(clientIdx + 1) : rest;
+
+      const knownProducts = ['Multifamiliar', 'Unifamiliar', 'Condominio', 'Edificio', 'Comercial'];
+      const prodIdx = afterClient.findIndex(l => knownProducts.some(k => k.toLowerCase() === l.toLowerCase()));
+      const knownOrderTypes = ['Técnica', 'Tecnica', 'Comercial', 'Postventa', 'Mantenimiento', 'Reclamo'];
+      const orderTypeIdx = afterClient.findIndex(l => knownOrderTypes.some(t => t.toLowerCase() === l.toLowerCase()));
+
+      if (prodIdx !== -1) {
+        rec['Producto'] = afterClient[prodIdx] || '';
+        if (afterClient[prodIdx + 1] && afterClient[prodIdx + 1].includes('INTERNET')) {
+          rec['Tipo Ubicación'] = afterClient[prodIdx + 1];
+        }
+        if (afterClient[prodIdx + 2] && ['Domicilio', 'Negocio', 'Empresa'].includes(afterClient[prodIdx + 2])) {
+          rec['Ubicación'] = afterClient[prodIdx + 2];
+        }
+
+        const motivoRegSearchEnd = orderTypeIdx !== -1 ? orderTypeIdx : afterClient.length;
+        const ubicStart = prodIdx + 2;
+        for (let i = ubicStart; i < motivoRegSearchEnd; i++) {
+          const candidate = afterClient[i];
+          if (
+            candidate &&
+            !/^Domicilio$/i.test(candidate) &&
+            !candidate.startsWith('Domicilio') &&
+            !/^(CHICLAYO|LIMA|TRUJILLO|PIURA|AREQUIPA|CUSCO|ICA|HUANCAYO)\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)\b/i.test(candidate)
+          ) {
+            rec['Motivo Regestión'] = candidate;
+            break;
+          }
+        }
+      }
+
+      const isRealSectorOperativo = (l) =>
+        /^(CHICLAYO|LIMA|TRUJILLO|PIURA|AREQUIPA|CUSCO|ICA|HUANCAYO|CHIMBOTE|TACNA|JULIACA|TARAPOTO|PUCALLPA|IQUITOS|HUANUCO|AYACUCHO|CAJAMARCA|PUNO)\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)(\s+\d+)?$/i.test(l) ||
+        (/^[A-ZÑÁÉÍÓÚ\s]{3,20}\s*-\s*(ESTE|CENTRO|NORTE|SUR|OESTE)(\s+\d+)?$/i.test(l) && !l.includes('WN-') && !l.includes('OP-'));
+
+      const sectorIdx = afterClient.findIndex(l => isRealSectorOperativo(l));
+
+      if (orderTypeIdx !== -1) {
+        const orderSeq = afterClient.slice(orderTypeIdx).filter(l => l !== '');
+        rec['Tipo Orden'] = orderSeq[0] || '';
+        rec['Tipo Trabajo'] = orderSeq[1] || '';
+        rec['Motivo Trabajo'] = orderSeq[2] || '';
+        const sectorAfterMotivo = orderSeq.slice(3).find(l => isRealSectorOperativo(l));
+        rec['Sector Operativo'] = sectorAfterMotivo || (sectorIdx !== -1 ? afterClient[sectorIdx] : '');
+      } else if (sectorIdx !== -1) {
+        rec['Sector Operativo'] = afterClient[sectorIdx];
+        rec['Tipo Orden'] = afterClient[sectorIdx + 1] || '';
+        rec['Tipo Trabajo'] = afterClient[sectorIdx + 2] || '';
+        rec['Motivo Trabajo'] = afterClient[sectorIdx + 3] || '';
+      }
+
+      const dirIdx = afterClient.findIndex(l =>
+        l.length > 18 &&
+        !l.startsWith('Fecha:') &&
+        !l.includes('COORDENADA') &&
+        !l.includes('Paquete:') &&
+        ((l.includes('(') && l.includes(')')) || /^(CALLE|AV|AVENIDA|JR|JIRON|PSJ|PASAJE|MZ|URB|CENTRO POBLADO|AA\.?HH|PUEBLO JOVEN|SECTOR)/i.test(l))
+      );
+
+      if (dirIdx !== -1) {
+        rec['Dirección'] = afterClient[dirIdx];
+
+        const anchorIdx = orderTypeIdx !== -1 ? orderTypeIdx + 3 : (sectorIdx !== -1 ? sectorIdx + 4 : 0);
+        if (dirIdx > anchorIdx) {
+          const locLines = afterClient.slice(anchorIdx, dirIdx).filter(l =>
+            l !== '' &&
+            !knownOrderTypes.some(t => t.toLowerCase() === l.toLowerCase()) &&
+            !/^(INSTALACION|AVERIA|MIGRACION|TRASLADO|RETIRO|MANTENIMIENTO|POSTVENTA)$/i.test(l) &&
+            !l.includes('ATENCION POR') &&
+            l !== rec['Motivo Trabajo'] &&
+            l !== rec['Sector Operativo']
+          );
+          rec['Localidad'] = locLines.join(' / ');
+        }
+
+        if (afterClient[dirIdx + 1] && /^\d{7,10}$/.test(afterClient[dirIdx + 1])) {
+          rec['Código De Seguimiento'] = afterClient[dirIdx + 1];
+        }
+        if (afterClient[dirIdx + 2] && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(afterClient[dirIdx + 2])) {
+          rec['Fecha Visita'] = afterClient[dirIdx + 2];
+        }
+      }
+
+      const docTypeIdx = afterClient.findIndex(l =>
+        l.includes('Cédula') || l === 'DNI' || l === 'RUC' || l === 'Carnet de Extranjería' || l === 'Pasaporte'
+      );
+
+      if (docTypeIdx !== -1) {
+        const regionStart = dirIdx !== -1 ? dirIdx + 3 : 0;
+        if (docTypeIdx > regionStart) {
+          const regionLines = afterClient.slice(regionStart, docTypeIdx).filter(Boolean);
+          rec['Región / Zona'] = regionLines.join(' / ');
+        }
+
+        rec['Tipo Documento'] = afterClient[docTypeIdx] || '';
+        rec['Prioridad'] = afterClient[docTypeIdx + 1] || '';
+        rec['Móvil'] = afterClient[docTypeIdx + 2] || '';
+        rec['Fijo'] = afterClient[docTypeIdx + 3] || '';
+      }
+
+      const geoIdx = afterClient.findIndex(l => /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(l));
+      if (geoIdx !== -1) {
+        rec['Georeferencia'] = afterClient[geoIdx] || '';
+        rec['Proveedeor'] = afterClient[geoIdx + 1] || '';
+        rec['Id de Proyecto'] = afterClient[geoIdx + 2] || '';
+      }
+
+      const techIdx = afterClient.findIndex(l => l.includes('COORDENADA CTO') || l.includes('CTO1/'));
+      if (techIdx !== -1) {
+        rec['Datos Técnicos'] = afterClient[techIdx] || '';
+        if (afterClient[techIdx + 1] && /^\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}$/.test(afterClient[techIdx + 1])) {
+          rec['Fecha Estado'] = afterClient[techIdx + 1];
+        }
+      }
+
+      const subLine = afterClient.find(l => l.includes('Paquete:') || l.includes('Campaña :') || l.includes('SVA\'s:'));
+      if (subLine) {
+        rec['Suscripción'] = subLine;
+      }
+
+      const histIdx = afterClient.findIndex(l => l.startsWith('Fecha:') && l.includes('Estado:'));
+      if (histIdx !== -1) {
+        rec['Historial de Estados'] = afterClient[histIdx];
+        if (afterClient[histIdx + 1]) {
+          rec['Email'] = afterClient[histIdx + 1];
+        }
+      }
+
+      return rec;
+    }
+
+    function createEmptyRecord() {
+      const obj = {};
+      EXPECTED_HEADERS.forEach(h => obj[h] = '');
+      return obj;
+    }
+
+    function matchHeaderKey(rawHeader) {
+      const clean = rawHeader.trim().toLowerCase();
+      return EXPECTED_HEADERS.find(h => h.toLowerCase() === clean) || null;
+    }
+
+    function processPastedData() {
+      const textarea = document.getElementById('pasteInput');
+      const raw = textarea.value;
+
+      if (!raw.trim()) {
+        showToast('Por favor pega primero la información copiada del sistema.', 'warning');
+        textarea.focus();
+        return;
+      }
+
+      const parsed = parseRawPastedText(raw);
+
+      if (parsed.length === 0) {
+        showToast('No se detectaron registros válidos con número de orden (Nº). Verifica el texto pegado.', 'error');
+        return;
+      }
+
+      const uniqueIncomingMap = new Map();
+      for (const item of parsed) {
+        const id = String(item['Nº']).trim();
+        if (id && !uniqueIncomingMap.has(id)) {
+          uniqueIncomingMap.set(id, item);
+        }
+      }
+      const incomingRecords = Array.from(uniqueIncomingMap.values());
+      const todayStr = getTodayDdMmYyyy();
+
+      if (masterRecords.length === 0) {
+        const now = formatNow();
+        masterRecords = incomingRecords.map(r => ({
+          ...r,
+          _addedAt: now,
+          _isRecent: false
+        }));
+        lastBatchTime = now;
+
+        applySavedTodayStatesToMaster();
+        saveToStorage();
+        clearTextarea();
+        dismissComparison();
+        refreshAllUI(0);
+        syncBitacoraFromGoogleSheet(false);
+        showToast(`¡Listo! Se cargaron ${incomingRecords.length} registros iniciales en la Base Principal.`, 'success');
+        return;
+      }
+
+      const masterById = new Map(masterRecords.map(r => [String(r['Nº']).trim(), r]));
+
+      const newOnes = [];
+      const existingOnes = [];
+      const updatedRecordsInfo = [];
+      const incomingIds = new Set(incomingRecords.map(r => String(r['Nº']).trim()));
+
+      for (const rec of incomingRecords) {
+        const id = String(rec['Nº']).trim();
+        const existingRec = masterById.get(id);
+
+        if (existingRec) {
+          if (existingRec._missingInMegalogic) {
+            existingRec._missingInMegalogic = false;
+            delete existingRec._missingDetectedAt;
+          }
+
+          const hasCoordinadoToday =
+            String(existingRec._savedEstadoToday || '').toUpperCase().trim() === 'COORDINADO' &&
+            existingRec._savedEstadoDate === todayStr;
+
+          const incomingEstadoUpper = String(rec['Estado'] || '').toUpperCase().trim();
+          const incomingIsAgendada = incomingEstadoUpper === 'AGENDADA';
+
+          if (hasCoordinadoToday && incomingIsAgendada) {
+            rec['Estado'] = 'COORDINADO';
+            existingRec['Estado'] = 'COORDINADO';
+          } else if (hasCoordinadoToday && !incomingIsAgendada) {
+            delete existingRec._savedEstadoToday;
+            delete existingRec._savedEstadoDate;
+            delete existingRec._savedEstadoMeta;
+          }
+
+          const prevEstado = (existingRec['Estado'] || '').trim();
+          const nextEstado = (rec['Estado'] || '').trim();
+          const changedFields = [];
+
+          for (const header of EXPECTED_HEADERS) {
+            if (header === 'Nº') continue;
+            const oldVal = String(existingRec[header] || '').trim();
+            const newVal = String(rec[header] || '').trim();
+
+            if (oldVal !== newVal) {
+              existingRec[header] = rec[header] || '';
+              changedFields.push(header);
+            }
+          }
+
+          if (changedFields.length > 0) {
+            existingRec._updatedAt = formatNow();
+            existingRec._changedFields = changedFields;
+            if (nextEstado && prevEstado.toLowerCase() !== nextEstado.toLowerCase()) {
+              existingRec._statusUpdatedAt = formatNow();
+              existingRec._prevEstado = prevEstado;
+            }
+
+            updatedRecordsInfo.push({
+              id,
+              cliente: existingRec['Cliente'] || '',
+              changedFields,
+              statusChanged: prevEstado.toLowerCase() !== nextEstado.toLowerCase(),
+              from: prevEstado || '-',
+              to: nextEstado || '-'
+            });
+          }
+
+          existingOnes.push(rec);
+        } else {
+          newOnes.push(rec);
+        }
+      }
+
+      const missingNow = [];
+      const nowAlertTime = formatNow();
+      for (const mRec of masterRecords) {
+        const mId = String(mRec['Nº']).trim();
+        if (!incomingIds.has(mId)) {
+          mRec._missingInMegalogic = true;
+          if (!mRec._missingDetectedAt) {
+            mRec._missingDetectedAt = nowAlertTime;
+          }
+          missingNow.push(mRec);
+        }
+      }
+
+      pendingNewRecords = newOnes;
+      pendingOmitted = existingOnes;
+      lastUpdatedStatuses = updatedRecordsInfo;
+      lastMissingRecords = missingNow;
+
+      if (updatedRecordsInfo.length > 0 || missingNow.length > 0) {
+        saveToStorage();
+        refreshAllUI();
+      }
+
+      syncBitacoraFromGoogleSheet(false);
+
+      if (updatedRecordsInfo.length > 0) {
+        showToast(
+          `Se actualizaron ${updatedRecordsInfo.length} registro${updatedRecordsInfo.length === 1 ? '' : 's'} existente${updatedRecordsInfo.length === 1 ? '' : 's'} con cambios en sus columnas.`,
+          'info'
+        );
+      }
+
+      renderComparisonPanel();
+      lucide.createIcons();
+
+      if (missingNow.length > 0) {
+        openMissingMegalogicModal(missingNow);
+      } else {
+        document.getElementById('comparisonSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    function renderComparisonPanel() {
+      const section = document.getElementById('comparisonSection');
+      section.classList.remove('hidden');
+
+      const newCount = pendingNewRecords.length;
+      const omittedCount = pendingOmitted.length;
+      const updatedCount = lastUpdatedStatuses.length;
+      const missingCount = lastMissingRecords.length;
+
+      document.getElementById('compNewBadge').textContent = `+${newCount} Nuevo${newCount === 1 ? '' : 's'}`;
+      document.getElementById('compExistingBadge').textContent = updatedCount > 0
+        ? `${omittedCount} Existentes (${updatedCount} actualizado${updatedCount === 1 ? '' : 's'})`
+        : `${omittedCount} Existente${omittedCount === 1 ? '' : 's'} omitido${omittedCount === 1 ? '' : 's'}`;
+
+      const updatedSummaryNote = updatedCount > 0
+        ? ` Además, ${updatedCount} registro${updatedCount === 1 ? '' : 's'} existente${updatedCount === 1 ? '' : 's'} actualizó sus columnas modificadas en la tabla principal.`
+        : '';
+
+      const missingSummaryNote = missingCount > 0
+        ? ` ⚠️ ALERTA: ${missingCount} registro${missingCount === 1 ? '' : 's'} de tu base ya no figura${missingCount === 1 ? '' : 'n'} en el sistema Megalogic.`
+        : '';
+
+      document.getElementById('compSummaryText').textContent =
+        `Se analizaron ${newCount + omittedCount} registros pegados: ${newCount} no estaban en tu base y ${omittedCount} ya existían.${updatedSummaryNote}${missingSummaryNote}`;
+
+      const mergeBtn = document.getElementById('btnMergeNew');
+      const mergeLabel = document.getElementById('btnMergeNewLabel');
+      const newContainer = document.getElementById('compNewContainer');
+      const noNewContainer = document.getElementById('compNoNewContainer');
+
+      if (newCount > 0) {
+        mergeBtn.classList.remove('hidden');
+        mergeLabel.textContent = `Agregar ${newCount} Registro${newCount === 1 ? '' : 's'} Nuevo${newCount === 1 ? '' : 's'} a la Base Principal`;
+        newContainer.classList.remove('hidden');
+        noNewContainer.classList.add('hidden');
+      } else {
+        mergeBtn.classList.add('hidden');
+        newContainer.classList.add('hidden');
+        noNewContainer.classList.remove('hidden');
+      }
+
+      const tbody = document.getElementById('compNewTableBody');
+      tbody.innerHTML = pendingNewRecords.map(rec => {
+        const cellsHtml = EXPECTED_HEADERS.map((header, idx) => {
+          const val = rec[header] || '';
+          if (idx === 0) {
+            return `
+              <td class="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white border-r border-emerald-200">
+                <div class="flex items-center gap-1.5">
+                  <span>${escapeHtml(val)}</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800">NUEVO</span>
+                </div>
+              </td>
+            `;
+          }
+          if (header === 'Estado') {
+            return `<td class="py-2.5 px-3 whitespace-nowrap">${renderStatusBadge(val)}</td>`;
+          }
+          if (header === 'Prioridad') {
+            return `<td class="py-2.5 px-3 whitespace-nowrap">${renderPriorityBadge(val)}</td>`;
+          }
+          const wrapClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+            ? 'max-w-[280px] truncate'
+            : 'whitespace-nowrap';
+          return `<td class="py-2.5 px-3 text-slate-700 ${wrapClass}" title="${escapeHtml(val)}">${escapeHtml(val)}</td>`;
+        }).join('');
+
+        return `<tr class="hover:bg-emerald-50/40 transition">${cellsHtml}</tr>`;
+      }).join('');
+
+      const omittedFooter = document.getElementById('compOmittedFooter');
+      if (omittedCount > 0) {
+        omittedFooter.classList.remove('hidden');
+        document.getElementById('omittedToggleText').textContent = updatedCount > 0
+          ? `Ver los ${omittedCount} registros existentes (${updatedCount} con datos actualizados)`
+          : `Ver los ${omittedCount} registro${omittedCount === 1 ? '' : 's'} existente${omittedCount === 1 ? '' : 's'} que fueron omitidos`;
+        const updatedMap = new Map(lastUpdatedStatuses.map(u => [u.id, u]));
+        document.getElementById('omittedPills').innerHTML = pendingOmitted.map(r => {
+          const upd = updatedMap.get(String(r['Nº']).trim());
+          const detailBadge = upd
+            ? (upd.statusChanged
+                ? `${escapeHtml(upd.from)} → ${escapeHtml(upd.to)}${upd.changedFields.length > 1 ? ` (+${upd.changedFields.length - 1} col.)` : ''}`
+                : `Actualizado: ${escapeHtml(upd.changedFields.slice(0, 3).join(', '))}${upd.changedFields.length > 3 ? '...' : ''}`)
+            : '';
+          return `
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border ${upd ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200'} text-xs text-slate-600">
+              <strong class="text-slate-800">${escapeHtml(r['Nº'])}</strong>
+              <span class="text-slate-400">•</span>
+              <span class="truncate max-w-[160px]">${escapeHtml(r['Cliente'] || 'Sin nombre')}</span>
+              ${upd ? `<span class="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold text-[11px]" title="Columnas modificadas: ${escapeHtml(upd.changedFields.join(', '))}">${detailBadge}</span>` : ''}
+            </span>
+          `;
+        }).join('');
+      } else {
+        omittedFooter.classList.add('hidden');
+      }
+      document.getElementById('omittedListContainer').classList.add('hidden');
+      document.getElementById('omittedChevron').style.transform = 'rotate(0deg)';
+    }
+
+    function toggleOmittedList() {
+      const container = document.getElementById('omittedListContainer');
+      const chevron = document.getElementById('omittedChevron');
+      const isHidden = container.classList.contains('hidden');
+      container.classList.toggle('hidden');
+      chevron.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+
+    function mergeNewRecordsToMaster() {
+      if (pendingNewRecords.length === 0) return;
+
+      const now = formatNow();
+      const addedCount = pendingNewRecords.length;
+
+      masterRecords = masterRecords.map(r => ({ ...r, _isRecent: false }));
+
+      const formattedNew = pendingNewRecords.map(r => ({
+        ...r,
+        _addedAt: now,
+        _isRecent: true
+      }));
+
+      masterRecords = [...formattedNew, ...masterRecords];
+      lastBatchTime = now;
+
+      applySavedTodayStatesToMaster();
+      saveToStorage();
+      clearTextarea();
+      dismissComparison();
+      refreshAllUI(addedCount);
+
+      syncBitacoraFromGoogleSheet(false);
+
+      showToast(`¡${addedCount} registro${addedCount === 1 ? '' : 's'} nuevo${addedCount === 1 ? '' : 's'} agregado${addedCount === 1 ? '' : 's'} a la Base Principal!`, 'success');
+    }
+
+    function dismissComparison() {
+      pendingNewRecords = [];
+      pendingOmitted = [];
+      lastUpdatedStatuses = [];
+      lastMissingRecords = [];
+      document.getElementById('comparisonSection').classList.add('hidden');
+    }
+
+    function openMissingMegalogicModal(missingRecords) {
+      const modal = document.getElementById('missingMegalogicModal');
+      const subtitle = document.getElementById('missingModalSubtitle');
+      const list = document.getElementById('missingModalList');
+
+      subtitle.textContent = missingRecords.length === 1
+        ? 'Se detectó 1 registro que estaba en la Tabla Principal pero ya no figura en el sistema Megalogic:'
+        : `Se detectaron ${missingRecords.length} registros que estaban en la Tabla Principal pero ya no figuran en el sistema Megalogic:`;
+
+      list.innerHTML = missingRecords.map(r => `
+        <div class="flex items-center justify-between gap-2 bg-white border border-rose-200 rounded-lg px-3 py-2 text-xs">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-extrabold text-rose-700">Nº ${escapeHtml(r['Nº'])}</span>
+              ${renderStatusBadge(r['Estado'])}
+            </div>
+            <p class="font-semibold text-slate-800 truncate mt-1">${escapeHtml(r['Cliente'] || 'Sin cliente')}</p>
+            <p class="text-[11px] text-slate-500 truncate">${escapeHtml(r['Cuadrilla'] || 'Sin cuadrilla')}</p>
+          </div>
+          <span class="text-[11px] font-bold text-rose-600 shrink-0">NO FIGURA</span>
+        </div>
+      `).join('');
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeMissingMegalogicModal() {
+      const modal = document.getElementById('missingMegalogicModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      document.getElementById('comparisonSection').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function refreshAllUI(lastAddedCount = null) {
+      updateKPIs(lastAddedCount);
+      updateFullSavedBadge();
+      populateFilterDropdowns();
+      renderMasterTable();
+    }
+
+    function updateKPIs(lastAddedCount) {
+      document.getElementById('kpiTotal').textContent = masterRecords.length;
+
+      if (lastAddedCount !== null) {
+        document.getElementById('kpiLastAdded').textContent = `+${lastAddedCount}`;
+        document.getElementById('kpiLastTime').textContent = lastBatchTime ? `Agregado ${lastBatchTime}` : 'Sin cargas recientes';
+      } else {
+        const recentCount = masterRecords.filter(r => r._isRecent).length;
+        document.getElementById('kpiLastAdded').textContent = `+${recentCount}`;
+        if (masterRecords.length > 0 && masterRecords[0]._addedAt) {
+          document.getElementById('kpiLastTime').textContent = `Última carga: ${masterRecords[0]._addedAt}`;
+        }
+      }
+
+      const agendadas = masterRecords.filter(r => (r['Estado'] || '').toLowerCase() === 'agendada').length;
+      document.getElementById('kpiAgendadas').textContent = agendadas;
+
+      const cuadrillas = new Set(masterRecords.map(r => r['Cuadrilla']).filter(Boolean));
+      document.getElementById('kpiCuadrillas').textContent = cuadrillas.size;
+    }
+
+    function populateFilterDropdowns() {
+      const cuadrillaSelect = document.getElementById('filterCuadrilla');
+      const estadoSelect = document.getElementById('filterEstado');
+
+      const prevCuadrilla = cuadrillaSelect.value;
+      const prevEstado = estadoSelect.value;
+
+      const cuadrillas = Array.from(new Set(masterRecords.map(r => r['Cuadrilla']).filter(Boolean))).sort();
+      const estados = Array.from(new Set(masterRecords.map(r => r['Estado']).filter(Boolean))).sort();
+
+      cuadrillaSelect.innerHTML = '<option value="">Todas las cuadrillas</option>' +
+        cuadrillas.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+
+      estadoSelect.innerHTML = '<option value="">Todos los estados</option>' +
+        estados.map(e => `<option value="${escapeHtml(e)}">${escapeHtml(e.toUpperCase())}</option>`).join('');
+
+      if (cuadrillas.includes(prevCuadrilla)) cuadrillaSelect.value = prevCuadrilla;
+      if (estados.includes(prevEstado)) estadoSelect.value = prevEstado;
+    }
+
+    function renderMasterTable() {
+      const tbody = document.getElementById('masterTableBody');
+      const emptyState = document.getElementById('emptyStateContainer');
+      const countBadge = document.getElementById('tableCountBadge');
+      const alertBadge = document.getElementById('alertCountBadge');
+
+      const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
+      const selectedCuadrilla = document.getElementById('filterCuadrilla').value;
+      const selectedEstado = document.getElementById('filterEstado').value;
+      const onlyRecent = document.getElementById('filterOnlyRecent').checked;
+      const todayStr = getTodayDdMmYyyy();
+
+      const filtered = masterRecords.filter(rec => {
+        if (selectedCuadrilla && rec['Cuadrilla'] !== selectedCuadrilla) return false;
+        if (selectedEstado && rec['Estado'] !== selectedEstado) return false;
+        if (onlyRecent && !rec._isRecent) return false;
+
+        if (searchTerm) {
+          const haystack = [
+            rec['Nº'],
+            rec['Cod Seguimiento Cliente'],
+            rec['Número Documento'],
+            rec['Cliente'],
+            rec['Cuadrilla'],
+            rec['Dirección'],
+            rec['Localidad'],
+            rec['Sector Operativo'],
+            rec['Móvil'],
+            rec['Suscripción']
+          ].join(' ').toLowerCase();
+          if (!haystack.includes(searchTerm)) return false;
+        }
+        return true;
+      });
+
+      const enriched = filtered.map((rec, originalIdx) => ({
+        rec,
+        dil: calculateDilacion(rec),
+        originalIdx
+      }));
+
+      enriched.sort((a, b) => {
+        if (a.dil.isAlert && !b.dil.isAlert) return -1;
+        if (!a.dil.isAlert && b.dil.isAlert) return 1;
+        if (a.dil.isAlert && b.dil.isAlert) {
+          return b.dil.deltaMin - a.dil.deltaMin;
+        }
+        return a.originalIdx - b.originalIdx;
+      });
+
+      const alertTotalCount = enriched.filter(item => item.dil.isAlert).length;
+      if (alertTotalCount > 0) {
+        alertBadge.textContent = `🚨 ${alertTotalCount} en alerta de tiempo`;
+        alertBadge.classList.remove('hidden');
+      } else {
+        alertBadge.classList.add('hidden');
+      }
+
+      countBadge.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
+
+      if (masterRecords.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      if (enriched.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="${EXPECTED_HEADERS.length + 3}" class="py-10 text-center text-slate-500 text-sm">
+              No se encontraron órdenes que coincidan con los filtros aplicados.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = enriched.map(({ rec, dil }) => {
+        const isRecent = Boolean(rec._isRecent);
+        const isMissing = Boolean(rec._missingInMegalogic);
+        const isTimeAlert = Boolean(dil.isAlert);
+        const isSavedToday = Boolean(rec._savedEstadoToday && rec._savedEstadoDate === todayStr);
+
+        const rowBg = isMissing
+          ? 'row-missing-alert'
+          : (isTimeAlert
+              ? 'row-time-alert'
+              : (isRecent ? 'bg-brand-50/45 hover:bg-brand-50/80' : 'bg-white hover:bg-slate-50/90'));
+
+        const stickyBg = isMissing
+          ? 'bg-rose-50'
+          : (isTimeAlert
+              ? 'bg-[#FFF1F2]'
+              : (isRecent ? 'bg-[#FFF8F4]' : 'bg-white'));
+
+        const actionCellHtml = `
+          <td class="py-3 px-2.5 whitespace-nowrap sticky left-0 z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing || isTimeAlert ? 'border-rose-300' : 'border-slate-200'} text-center">
+            <button type="button" onclick="event.stopPropagation(); openActionStatusModal('${escapeHtml(rec['Nº'])}')" class="inline-flex items-center justify-center w-7 h-7 rounded-lg text-white bg-brand-500 hover:bg-brand-600 transition shadow-2xs cursor-pointer" title="Cambiar estado / Guardar registro completo">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+            </button>
+          </td>
+        `;
+
+        const cellsHtml = EXPECTED_HEADERS.map((header, idx) => {
+          const val = rec[header] || '';
+
+          if (idx === 0) {
+            const wasUpdated = Boolean(rec._updatedAt && Array.isArray(rec._changedFields) && rec._changedFields.length > 0);
+            const hasObs = Boolean(rec._virtualObservaciones);
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap sticky left-[42px] z-10 ${stickyBg} group-hover:bg-slate-100/90 border-r ${isMissing || isTimeAlert ? 'border-rose-300' : 'border-slate-200'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                <div class="flex items-center gap-2">
+                  <span class="font-bold ${isMissing || isTimeAlert ? 'text-rose-800' : 'text-slate-900'}">${escapeHtml(val)}</span>
+                  ${hasObs ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-brand-100 text-brand-700 border border-brand-300" title="OBS: ${escapeHtml(rec._virtualObservaciones)}">OBS</span>` : ''}
+                  ${isMissing ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-600 text-white animate-pulse" title="Alerta: este registro ya no figura en el sistema Megalogic (detectado ${escapeHtml(rec._missingDetectedAt || '')})">OT NO FIGURA</span>` : ''}
+                  ${isRecent && !isMissing ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">NUEVO</span>` : ''}
+                  ${wasUpdated && !isMissing ? `<span class="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300" title="Columnas actualizadas (${escapeHtml(rec._updatedAt)}): ${escapeHtml(rec._changedFields.join(', '))}">ACT</span>` : ''}
+                </div>
+              </td>
+            `;
+          }
+
+          if (header === 'Número Documento') {
+            const bitacoraMatch = findBitacoraMatchesForDni(val);
+            const hasReprog = bitacoraMatch && bitacoraMatch.reprogramaRows.length > 0;
+            const hasCancel = bitacoraMatch && bitacoraMatch.canceladosRows.length > 0;
+
+            const bitacoraBtn = bitacoraMatch
+              ? (hasReprog
+                  ? `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver detalle (${bitacoraMatch.reprogramaRows.length} REPROGRAMA${hasCancel ? ` • ${bitacoraMatch.canceladosRows.length} CANCELADOS` : ''})" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-brand-500 text-white hover:bg-brand-600 shadow-2xs transition cursor-pointer">
+                       <i data-lucide="history" class="w-3 h-3"></i>
+                       <span>${bitacoraMatch.totalCount}</span>
+                     </button>`
+                  : `<button type="button" onclick="event.stopPropagation(); openBitacoraModal('${escapeHtml(val)}')" title="Ver detalle (${bitacoraMatch.canceladosRows.length} CANCELADOS)" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-rose-600 text-white hover:bg-rose-700 shadow-2xs transition cursor-pointer">
+                       <i data-lucide="file-warning" class="w-3 h-3"></i>
+                       <span>${bitacoraMatch.totalCount}</span>
+                     </button>`)
+              : '';
+
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap font-mono text-slate-800">
+                <div class="inline-flex items-center gap-1.5">
+                  <span>${escapeHtml(val)}</span>
+                  ${bitacoraBtn}
+                </div>
+              </td>
+            `;
+          }
+
+          if (header === 'Estado') {
+            const statusChangeHint = !isSavedToday && rec._statusUpdatedAt && rec._prevEstado
+              ? `<span class="block text-[10px] font-medium text-slate-500 mt-0.5" title="Actualizado a las ${escapeHtml(rec._statusUpdatedAt)}">Antes: ${escapeHtml(rec._prevEstado.toUpperCase())}</span>`
+              : '';
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}${statusChangeHint}</td><td class="py-3 px-3.5 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg text-[11px] border ${dil.badgeCls} inline-flex items-center gap-1 font-mono whitespace-nowrap" title="Indicador visual basado en Fecha Estado (${escapeHtml(rec['Fecha Estado'] || '-')})">${dil.texto}</span></td>`;
+          }
+
+          if (header === 'Prioridad') {
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderPriorityBadge(val)}</td>`;
+          }
+
+          if (header === 'Georeferencia' && val) {
+            return `
+              <td class="py-3 px-3.5 whitespace-nowrap text-xs">
+                <a href="https://www.google.com/maps?q=${encodeURIComponent(val)}" target="_blank" onclick="event.stopPropagation()" class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700 hover:underline font-mono font-semibold" title="Abrir en Google Maps">
+                  <i data-lucide="map-pin" class="w-3.5 h-3.5 shrink-0"></i>
+                  ${escapeHtml(val)}
+                </a>
+              </td>
+            `;
+          }
+
+          if (header === 'Cliente') {
+            return `<td class="py-3 px-3.5 whitespace-nowrap font-semibold text-slate-900">${escapeHtml(val)}</td>`;
+          }
+
+          const wrapClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
+            ? 'max-w-[300px] truncate'
+            : 'whitespace-nowrap';
+
+          return `<td class="py-3 px-3.5 text-slate-700 ${wrapClass}" title="${escapeHtml(val)}">${escapeHtml(val)}</td>`;
+        }).join('');
+
+        return `
+          <tr onclick="openDetailModal('${escapeHtml(rec['Nº'])}')" class="${rowBg} transition cursor-pointer group">
+            ${actionCellHtml}
+            ${cellsHtml}
+            <td class="py-3 px-3.5 whitespace-nowrap text-right">
+              <button type="button" class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 group-hover:bg-brand-500 group-hover:text-white transition shadow-2xs">
+                Ver ficha
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      lucide.createIcons();
+    }
+
+    function renderStatusBadge(status) {
+      const s = (status || '').trim();
+      const upper = s.toUpperCase();
+      const lower = s.toLowerCase();
+
+      if (upper === 'COORDINADO') {
+        return `
+          <span style="background-color: #5DFF00; border-color: #36B300;" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase text-black border shadow-xs ring-1 ring-black/15">
+            <i data-lucide="clock" class="w-3.5 h-3.5 text-black shrink-0 stroke-[2.5]"></i>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'en camino') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white shadow-sm shadow-fuchsia-500/30 ring-1 ring-fuchsia-700/40">
+            <span class="relative flex h-2 w-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+            </span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'en proceso' || lower === 'iniciada') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/30 ring-1 ring-indigo-700/40">
+            <span class="w-2 h-2 rounded-full bg-cyan-300 animate-pulse"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'finalizada' || lower === 'completada' || lower === 'atendida' || lower === 'cerrada') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-500/25 ring-1 ring-emerald-700/30">
+            <span class="w-2 h-2 rounded-full bg-white"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'regestión' || lower === 'regestion') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-gradient-to-r from-rose-800 to-red-900 text-white shadow-sm shadow-rose-900/30 ring-1 ring-rose-950/40">
+            <span class="w-2 h-2 rounded-full bg-rose-300"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'agendada') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-sky-50 text-sky-800 border border-sky-300/90 shadow-2xs">
+            <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower === 'pendiente' || lower === 'asignada' || lower === 'registrada') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase bg-amber-50 text-amber-800 border border-amber-300/90 shadow-2xs">
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      if (lower.includes('cancel') || lower.includes('anulad') || lower.includes('suspend') || upper === 'AUSENTE' || upper === 'ZONA PELIGROSA') {
+        return `
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-rose-50 text-rose-700 border border-rose-300 shadow-2xs">
+            <span class="w-2 h-2 rounded-full bg-rose-600"></span>
+            ${escapeHtml(upper)}
+          </span>
+        `;
+      }
+
+      return `
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase bg-slate-100 text-slate-700 border border-slate-300">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+          ${escapeHtml(upper || '-')}
+        </span>
+      `;
+    }
+
+    function renderPriorityBadge(priority) {
+      const p = (priority || '').trim();
+      const lower = p.toLowerCase();
+      if (lower === 'alta' || lower === 'urgente') {
+        return `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">${escapeHtml(p)}</span>`;
+      }
+      if (lower === 'media') {
+        return `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">${escapeHtml(p)}</span>`;
+      }
+      if (lower === 'baja') {
+        return `<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">${escapeHtml(p)}</span>`;
+      }
+      return `<span class="text-slate-400 text-xs">${escapeHtml(p || '-')}</span>`;
+    }
+
+    function buildMapaTecnicosProvinciaUrl(rec) {
+      const baseUrl = 'https://tecsycom-tech.github.io/mapa-tecnicos/';
+      const params = new URLSearchParams();
+      params.set('zonal', 'PROVINCIA');
+
+      const geoRaw = String(rec['Georeferencia'] || '').trim();
+      const geoMatch = geoRaw.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+      if (geoMatch) {
+        params.set('lat', geoMatch[1]);
+        params.set('lng', geoMatch[2]);
+      }
+
+      const codigo = String(rec['Cod Seguimiento Cliente'] || rec['Nº'] || '').trim();
+      if (codigo) {
+        params.set('codigo', codigo);
+      }
+
+      if (rec['Cliente']) {
+        params.set('cliente', String(rec['Cliente']).trim());
+      }
+
+      return `${baseUrl}?${params.toString()}`;
+    }
+
+    function openDetailModalFromObject(rec, sourceLabel = '') {
+      if (!rec) return;
+
+      const orderNum = rec['Nº'] || rec['ORDEN'] || rec['OrdenId'] || '---';
+      const estadoVal = rec['ESTADO_GUARDADO'] || rec['Estado'] || 'Sin estado';
+      const docVal = rec['Número Documento'] || rec['DNI'] || '-';
+      const codVal = rec['Cod Seguimiento Cliente'] || rec['CODIGO'] || '-';
+
+      document.getElementById('modalOrderNumber').textContent = orderNum;
+      document.getElementById('modalOrderStatus').innerHTML = renderStatusBadge(estadoVal);
+      document.getElementById('modalOrderClient').textContent = `${rec['Cliente'] || 'Cliente'} • DNI/Doc: ${docVal} • Cod: ${codVal}`;
+
+      const metaParts = [];
+      if (sourceLabel) metaParts.push(`Fuente: ${sourceLabel}`);
+      if (rec['FECHA_HORA_GUARDADO']) metaParts.push(`Guardado: ${rec['FECHA_HORA_GUARDADO']}`);
+      else if (rec._addedAt) metaParts.push(`Incorporado a la base: ${rec._addedAt}`);
+      document.getElementById('modalAddedMeta').textContent = metaParts.join(' • ');
+
+      const modalBody = document.getElementById('modalBody');
+      modalBody.innerHTML = buildDetailPanelHtml({ ...rec, 'Nº': orderNum, 'Estado': estadoVal });
+
+      const modal = document.getElementById('detailModal');
+      modal.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function openDetailModal(orderNumber) {
+      const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
+      if (!rec) return;
+      openDetailModalFromObject(rec, 'Base Principal');
+    }
+
+    function closeDetailModal() {
+      document.getElementById('detailModal').classList.add('hidden');
+    }
+
+    const WIN_HEADERS = [
+      "OrdenId", "TipoOrden", "TipoTraba", "Motivo Trabajo", "F.Soli", "Cliente", "Tipo", "TipoClienId",
+      "Producto", "Cuadrilla", "F.Visita", "Estado", "Direccion", "Localidad", "Provincia", "Direccion1",
+      "FechaUltiEsta", "IdenServi", "Region", "Zona", "Empresa", "Pais", "Tipo Ubicación", "Ubicación",
+      "CodiSeguiClien", "CodiSegui", "Tipo Documento", "Número Documento", "Email", "TeleMovilNume",
+      "TeleFijoNume", "Prioridad", "FechaFinVisi", "FechaIniVisi", "Motivo Cancelación", "Motivo Finalización",
+      "Motivo Anulación", "Motivo Suspensión", "Georeferencia", "Datos Técnicos", "Proveedeor",
+      "Sector Operativo", "Motivo", "Motivo Regestión", "Id de Proyecto", "Código Postal"
+    ];
+
+    function toExcelSerialDate(dateStr) {
+      if (!dateStr || typeof dateStr !== 'string') return '';
+      const s = dateStr.trim();
+      if (!s) return '';
+
+      let year, month, day, hour = 0, minute = 0, second = 0;
+
+      const mIso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/);
+      if (mIso) {
+        year = parseInt(mIso[1], 10);
+        month = parseInt(mIso[2], 10);
+        day = parseInt(mIso[3], 10);
+        hour = mIso[4] ? parseInt(mIso[4], 10) : 0;
+        minute = mIso[5] ? parseInt(mIso[5], 10) : 0;
+        second = mIso[6] ? parseInt(mIso[6], 10) : 0;
+      } else {
+        let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (m) {
+          const p1 = parseInt(m[1], 10);
+          const p2 = parseInt(m[2], 10);
+          year = parseInt(m[3], 10);
+          hour = m[4] ? parseInt(m[4], 10) : 0;
+          minute = m[5] ? parseInt(m[5], 10) : 0;
+          second = m[6] ? parseInt(m[6], 10) : 0;
+
+          if (p1 > 12) {
+            day = p1;
+            month = p2;
+          } else if (p2 > 12) {
+            month = p1;
+            day = p2;
+          } else {
+            day = p1;
+            month = p2;
+          }
+        } else {
+          m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+          if (m) {
+            month = parseInt(m[1], 10);
+            day = parseInt(m[2], 10);
+            year = parseInt(m[3], 10);
+            hour = m[4] ? parseInt(m[4], 10) : 0;
+            minute = m[5] ? parseInt(m[5], 10) : 0;
+            second = m[6] ? parseInt(m[6], 10) : 0;
+            const ampm = m[7].toUpperCase();
+            if (ampm === 'PM' && hour < 12) hour += 12;
+            if (ampm === 'AM' && hour === 12) hour = 0;
+          } else {
+            return s;
+          }
+        }
+      }
+
+      const utcMs = Date.UTC(year, month - 1, day, hour, minute, second);
+      const excelEpochMs = Date.UTC(1899, 11, 30, 0, 0, 0);
+      const serial = (utcMs - excelEpochMs) / 86400000;
+      return Number(serial.toFixed(10));
+    }
+
+    function buildWinRowFromRecord(rec) {
+      const vals = new Array(WIN_HEADERS.length).fill('');
+      const getCol = (name) => String(rec[name] || '').trim();
+
+      const estadoWordsRegex = /^(Agendada|Pendiente|Asignada|Finalizada|Cancelada|Anulada|Suspendida|En camino|En proceso|Iniciada|En ejecución|Atendida|Cerrada|Registrada|Regestión|Regestion)$/i;
+      const geoRegex = /^-?\d+\.\d+\s*,\s*-?\d+\.\d+$/;
+      const dateRegex = /^(?:\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})/;
+
+      const paisEmpresaRaw = getCol('País / Empresa');
+      let paisExt = '';
+      let empresaExt = '';
+      if (paisEmpresaRaw.includes('/')) {
+        const peParts = paisEmpresaRaw.split('/').map(p => p.trim());
+        paisExt = peParts[0] || '';
+        empresaExt = peParts[1] || '';
+      } else if (paisEmpresaRaw) {
+        if (/^per[úu]$/i.test(paisEmpresaRaw)) {
+          paisExt = paisEmpresaRaw;
+        } else {
+          empresaExt = paisEmpresaRaw;
+        }
+      }
+      if (!paisExt) paisExt = 'Perú';
+      if (!empresaExt) empresaExt = 'GESTIÓN PROVINCIA';
+
+      const ubicacionRaw = getCol('Ubicación');
+      let ubicacionExt = ubicacionRaw;
+      if (ubicacionRaw.includes(';')) {
+        const uParts = ubicacionRaw.split(';').map(p => p.trim()).filter(Boolean);
+        ubicacionExt = uParts[uParts.length - 1] || ubicacionRaw;
+      } else if (/^Domicilio\s*-\s*Domicilio Particular$/i.test(ubicacionRaw)) {
+        ubicacionExt = 'Domicilio Particular';
+      }
+
+      const rawDir = getCol('Dirección');
+
+      let locCol = getCol('Localidad');
+      let provPart = getCol('Provincia');
+      if (!locCol && rawDir) {
+        const parenMatch = rawDir.match(/\(([^)]+)\)/);
+        if (parenMatch) {
+          const pParts = parenMatch[1].split(',').map(p => p.trim()).filter(Boolean);
+          if (pParts.length >= 2) {
+            locCol = pParts[1];
+            if (!provPart) provPart = pParts[2] || pParts[1];
+          } else if (pParts.length === 1) {
+            locCol = pParts[0];
+          }
+        }
+      }
+      let locPart = locCol;
+      if (locCol.includes(',')) {
+        const parts = locCol.split(',').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      } else if (locCol.includes('/')) {
+        const parts = locCol.split('/').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      } else if (locCol.includes('-')) {
+        const parts = locCol.split('-').map(p => p.trim());
+        locPart = parts[0] || '';
+        if (!provPart && parts[1]) provPart = parts[1];
+      }
+
+      const regZonaRaw = getCol('Región / Zona');
+      let regionExt = regZonaRaw;
+      let zonaExt = '';
+      if (regZonaRaw.includes(';')) {
+        const rzParts = regZonaRaw.split(';').map(p => p.trim());
+        regionExt = rzParts[0] || '';
+        zonaExt = rzParts[1] || '';
+      } else if (regZonaRaw.includes('/')) {
+        const rzParts = regZonaRaw.split('/').map(p => p.trim());
+        regionExt = rzParts[0] || '';
+        zonaExt = rzParts[1] || '';
+      }
+
+      if (!zonaExt) {
+        const dirMatch = rawDir.match(/\(([^,]+)/);
+        if (dirMatch) zonaExt = dirMatch[1].trim();
+      }
+
+      const fechaEstadoRaw = getCol('Fecha Estado');
+      const fechaUltiEstaSerial = toExcelSerialDate(fechaEstadoRaw);
+      const fechaSoliSerial = toExcelSerialDate(getCol('Fecha Solicitud'));
+      const fechaVisitaSerial = toExcelSerialDate(getCol('Fecha Visita'));
+
+      let clienteColVal = getCol('Cliente');
+      if (estadoWordsRegex.test(clienteColVal) || geoRegex.test(clienteColVal) || dateRegex.test(clienteColVal)) {
+        clienteColVal = '';
+      }
+      clienteColVal = clienteColVal.replace(/\s*\((Multifamiliar|Residencial|Corporativo|Unifamiliar)\)\s*$/i, '').trim();
+
+      let estadoColVal = getCol('Estado');
+      if (!estadoWordsRegex.test(estadoColVal) && estadoColVal.length > 25) {
+        estadoColVal = '';
+      }
+
+      const codiSeguiVal = getCol('Código De Seguimiento');
+
+      const motivoRaw = getCol('Motivo');
+      let motivoExt = motivoRaw;
+      if (motivoRaw.includes(';')) {
+        motivoExt = motivoRaw.split(';')[0].trim();
+      }
+
+      const prioridadOrigen = getCol('Prioridad');
+      const emailDestino = prioridadOrigen || getCol('Email');
+      const suscripcionExt = getCol('Suscripción');
+
+      const tipoOrdenExt = getCol('Tipo Orden');
+      const tipoTrabajoExt = getCol('Tipo Trabajo');
+      const motivoTrabajoExt = getCol('Motivo Trabajo');
+      let sectorOperativoExt = getCol('Sector Operativo');
+
+      if (estadoWordsRegex.test(sectorOperativoExt) || geoRegex.test(sectorOperativoExt)) {
+        sectorOperativoExt = '';
+      }
+
+      let geoExt = getCol('Georeferencia');
+      if (!geoRegex.test(geoExt)) {
+        geoExt = '';
+      }
+
+      const datosTecnicosExt = getCol('Datos Técnicos');
+
+      WIN_HEADERS.forEach((h, idx) => {
+        let val = '';
+
+        switch (h) {
+          case 'OrdenId':
+            val = getCol('Nº');
+            break;
+          case 'TipoOrden':
+            val = tipoOrdenExt;
+            break;
+          case 'TipoTraba':
+            val = tipoTrabajoExt;
+            break;
+          case 'Motivo Trabajo':
+            val = motivoTrabajoExt;
+            break;
+          case 'F.Soli':
+            val = fechaSoliSerial;
+            break;
+          case 'Cliente':
+            val = clienteColVal;
+            break;
+          case 'Tipo':
+            val = getCol('Tipo Ubicación');
+            break;
+          case 'TipoClienId':
+            val = '';
+            break;
+          case 'Producto':
+            val = getCol('Producto');
+            break;
+          case 'Cuadrilla':
+            val = getCol('Cuadrilla');
+            break;
+          case 'F.Visita':
+            val = fechaVisitaSerial;
+            break;
+          case 'Estado':
+            val = estadoColVal;
+            break;
+          case 'Direccion':
+          case 'Direccion1':
+            val = rawDir;
+            break;
+          case 'Localidad':
+            val = locPart;
+            break;
+          case 'Provincia':
+            val = provPart;
+            break;
+          case 'FechaUltiEsta':
+            val = fechaUltiEstaSerial;
+            break;
+          case 'IdenServi':
+            val = suscripcionExt;
+            break;
+          case 'Region':
+            val = regionExt;
+            break;
+          case 'Zona':
+            val = zonaExt || sectorOperativoExt;
+            break;
+          case 'Empresa':
+            val = empresaExt;
+            break;
+          case 'Pais':
+            val = paisExt;
+            break;
+          case 'Tipo Ubicación':
+            val = '';
+            break;
+          case 'Ubicación':
+            val = ubicacionExt;
+            break;
+          case 'CodiSeguiClien':
+            val = getCol('Cod Seguimiento Cliente');
+            break;
+          case 'CodiSegui':
+            val = codiSeguiVal;
+            break;
+          case 'Tipo Documento':
+            val = getCol('Tipo Documento');
+            break;
+          case 'Número Documento':
+            val = getCol('Número Documento');
+            break;
+          case 'Email':
+            val = emailDestino;
+            break;
+          case 'TeleMovilNume':
+            val = getCol('Móvil');
+            break;
+          case 'TeleFijoNume':
+            val = getCol('Fijo');
+            break;
+          case 'Prioridad':
+            val = prioridadOrigen;
+            break;
+          case 'FechaFinVisi':
+          case 'FechaIniVisi':
+            val = '';
+            break;
+          case 'Motivo Cancelación':
+            val = getCol('Motivo de Cancelación');
+            break;
+          case 'Motivo Finalización':
+            val = getCol('Motivo de Finalización');
+            break;
+          case 'Motivo Anulación':
+            val = getCol('Motivo de Anulación');
+            break;
+          case 'Motivo Suspensión':
+            val = getCol('Motivo de Suspensión');
+            break;
+          case 'Georeferencia':
+            val = geoExt;
+            break;
+          case 'Datos Técnicos':
+            val = datosTecnicosExt;
+            break;
+          case 'Proveedeor':
+            val = getCol('Proveedeor') || 'TECSYCOM';
+            break;
+          case 'Sector Operativo':
+            val = sectorOperativoExt;
+            break;
+          case 'Motivo':
+            val = motivoExt;
+            break;
+          case 'Motivo Regestión':
+            val = getCol('Motivo Regestión');
+            break;
+          case 'Id de Proyecto':
+            val = '';
+            break;
+          case 'Código Postal':
+            val = getCol('Código Postal');
+            break;
+          default:
+            val = getCol(h);
+            break;
+        }
+
+        vals[idx] = val !== undefined && val !== null ? val : '';
+      });
+
+      return vals;
+    }
+
+    async function ensureExcelJS() {
+      if (window.ExcelJS) return window.ExcelJS;
+      const urls = [
+        'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js',
+        'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js'
+      ];
+      for (const u of urls) {
+        try {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = u;
+            s.onload = res;
+            s.onerror = rej;
+            document.head.appendChild(s);
+          });
+          if (window.ExcelJS) return window.ExcelJS;
+        } catch (e) {}
+      }
+      throw new Error('No se pudo cargar la librería ExcelJS.');
+    }
+
+    async function exportBaseWin() {
+      if (masterRecords.length === 0) {
+        showToast('No hay registros en la base para exportar a Excel Base WIN.', 'warning');
+        return;
+      }
+
+      try {
+        const ExcelJS = await ensureExcelJS();
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Hoja de Datos', {
+          properties: { tabColor: { argb: 'FF004C99' } }
+        });
+
+        ws.getCell('A1').value = 'Consulta ordenes de Trabajo';
+        ws.getCell('A1').font = { name: 'Calibri', size: 11, bold: true };
+
+        for (let i = 2; i <= 7; i++) ws.addRow([]);
+
+        const headerRow = ws.getRow(8);
+        WIN_HEADERS.forEach((h, i) => {
+          const cell = headerRow.getCell(i + 1);
+          cell.value = h;
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF004C99' } };
+          cell.alignment = { horizontal: 'center', vertical: 'center' };
+        });
+
+        masterRecords.forEach((rec, rIdx) => {
+          const rowData = buildWinRowFromRecord(rec);
+          ws.addRow(rowData);
+          const dataRow = ws.getRow(9 + rIdx);
+          WIN_HEADERS.forEach((_, i) => {
+            dataRow.getCell(i + 1).font = { name: 'Calibri', size: 10 };
+          });
+        });
+
+        ws.columns.forEach(col => {
+          let maxLen = 10;
+          col.eachCell({ includeEmpty: true }, cell => {
+            if (cell.value) maxLen = Math.max(maxLen, String(cell.value).length);
+          });
+          col.width = Math.min(Math.max(maxLen + 3, 12), 35);
+        });
+
+        const buf = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const d = new Date();
+        const p = n => String(n).padStart(2, '0');
+        a.href = url;
+        a.download = `misOrdenesdeTrabajo${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+        showToast('¡Excel Base WIN exportado con las 46 columnas!');
+      } catch (e) {
+        console.error(e);
+        showToast('Error al exportar Excel Base WIN: ' + e.message, 'error');
+      }
+    }
+
+    function exportToExcel() {
+      if (masterRecords.length === 0) {
+        showToast('No hay registros en la base para exportar.', 'warning');
+        return;
+      }
+
+      const exportRows = masterRecords.map(rec => {
+        const cleanRow = {};
+        EXPECTED_HEADERS.forEach(h => {
+          cleanRow[h] = rec[h] || '';
+        });
+        cleanRow['Observación Persistente'] = rec._virtualObservaciones || '';
+        cleanRow['Estado Carga'] = rec._isRecent ? 'RECIEN AGREGADO' : 'BASE';
+        cleanRow['Fecha Incorporación'] = rec._addedAt || '';
+        return cleanRow;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Ordenes_Consolidadas');
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `Ordenes_SGI_${dateStr}.xlsx`);
+      showToast('Archivo Excel descargado correctamente.', 'success');
+    }
+
+    function copyNewOrderNumbers() {
+      if (pendingNewRecords.length === 0) return;
+      const text = pendingNewRecords.map(r => r['Nº']).join('\n');
+
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand('copy');
+      document.body.removeChild(temp);
+
+      showToast(`Se copiaron ${pendingNewRecords.length} números de orden al portapapeles.`, 'success');
+    }
+
+    function requestClearBase() {
+      if (masterRecords.length === 0) {
+        showToast('La base ya se encuentra vacía.', 'warning');
+        return;
+      }
+      const modal = document.getElementById('confirmClearModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeClearModal() {
+      const modal = document.getElementById('confirmClearModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function confirmClearBase() {
+      masterRecords = [];
+      pendingNewRecords = [];
+      pendingOmitted = [];
+      lastUpdatedStatuses = [];
+      lastMissingRecords = [];
+      lastBatchTime = null;
+      localStorage.removeItem(STORAGE_KEY);
+      closeClearModal();
+      dismissComparison();
+      refreshAllUI(0);
+      showToast('Se eliminaron todos los registros de la Base Principal.', 'success');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+
+      const styles = {
+        success: 'bg-slate-900 text-white border-emerald-500',
+        warning: 'bg-slate-900 text-white border-amber-500',
+        error: 'bg-rose-950 text-white border-rose-500',
+        info: 'bg-slate-900 text-white border-brand-500'
+      };
+
+      const iconNames = {
+        success: 'check-circle-2',
+        warning: 'alert-circle',
+        error: 'x-circle',
+        info: 'info'
+      };
+
+      const iconColors = {
+        success: 'text-emerald-400',
+        warning: 'text-amber-400',
+        error: 'text-rose-400',
+        info: 'text-brand-400'
+      };
+
+      toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border-l-4 shadow-lg text-xs sm:text-sm font-medium max-w-md animate-fade-in ${styles[type] || styles.info}`;
+      toast.innerHTML = `
+        <i data-lucide="${iconNames[type] || 'info'}" class="w-4 h-4 shrink-0 ${iconColors[type] || iconColors.info}"></i>
+        <span>${escapeHtml(message)}</span>
+      `;
+
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.25s ease';
+        setTimeout(() => toast.remove(), 260);
+      }, 4200);
+    }
+
+    function formatNow() {
+      const d = new Date();
+      return d.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+  </script>
+</body>
+</html>
