@@ -726,6 +726,7 @@
     let bitacoraCanceladosList = [];
     let fullSavedRecordsList = [];
     let activeActionRecord = null;
+    let durationSortDirection = 'default'; // 'default' | 'desc' | 'asc'
 
     const EXPECTED_HEADERS = [
       'Nº', 'Cod Seguimiento Cliente', 'Número Documento', 'Estado', 'Cuadrilla',
@@ -759,6 +760,18 @@
         }
       }, 15000);
     });
+
+    function toggleDurationSort() {
+      if (durationSortDirection === 'default') {
+        durationSortDirection = 'desc';
+      } else if (durationSortDirection === 'desc') {
+        durationSortDirection = 'asc';
+      } else {
+        durationSortDirection = 'default';
+      }
+      renderTableHeaders();
+      renderMasterTable();
+    }
 
     function getTodayDdMmYyyy() {
       const d = new Date();
@@ -1564,6 +1577,12 @@
       const masterHead = document.getElementById('masterTableHead');
       const actionHeaderHtml = `<th class="py-3.5 px-2.5 whitespace-nowrap sticky left-0 z-30 bg-slate-100 border-r border-slate-200 text-center text-slate-800" title="Acción"></th>`;
 
+      const sortIcon = durationSortDirection === 'desc'
+        ? '<i data-lucide="arrow-down-wide-narrow" class="w-3.5 h-3.5 text-brand-600 inline"></i>'
+        : durationSortDirection === 'asc'
+          ? '<i data-lucide="arrow-up-narrow-wide" class="w-3.5 h-3.5 text-brand-600 inline"></i>'
+          : '<i data-lucide="chevrons-up-down" class="w-3.5 h-3.5 text-brand-500/80 inline"></i>';
+
       masterHead.innerHTML = actionHeaderHtml + EXPECTED_HEADERS.map((header, idx) => {
         const displayLabel = DISPLAY_HEADER_ALIASES[header] || header;
 
@@ -1571,7 +1590,15 @@
           return `<th class="py-3.5 px-3.5 whitespace-nowrap sticky left-[42px] z-30 bg-slate-100 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] text-slate-800">${escapeHtml(displayLabel)}</th>`;
         }
         if (header === 'Estado') {
-          return `<th class="py-3.5 px-3.5 whitespace-nowrap text-slate-800">${escapeHtml(displayLabel)}</th><th class="py-3.5 px-3.5 whitespace-nowrap text-brand-600" title="Indicador visual en web (En camino límite 40m / En proceso límite 2h)">Duración</th>`;
+          return `
+            <th class="py-3.5 px-3.5 whitespace-nowrap text-slate-800">${escapeHtml(displayLabel)}</th>
+            <th class="py-3.5 px-3.5 whitespace-nowrap text-brand-600 select-none">
+              <button type="button" onclick="toggleDurationSort()" class="inline-flex items-center gap-1 font-bold text-brand-600 hover:text-brand-700 transition cursor-pointer" title="Ordenar por Duración (clic para alternar: Mayor a menor / Menor a mayor / Predeterminado)">
+                <span>Duración</span>
+                ${sortIcon}
+              </button>
+            </th>
+          `;
         }
         const minWidthClass = (header === 'Dirección' || header === 'Suscripción' || header === 'Datos Técnicos' || header === 'Historial de Estados')
           ? 'min-w-[260px]'
@@ -1586,6 +1613,8 @@
         }
         return `<th class="py-2.5 px-3 whitespace-nowrap">${escapeHtml(header)}</th>`;
       }).join('');
+
+      lucide.createIcons();
     }
 
     function loadFromStorage() {
@@ -2642,6 +2671,21 @@
       }));
 
       enriched.sort((a, b) => {
+        if (durationSortDirection === 'desc') {
+          if (a.dil.deltaMin !== b.dil.deltaMin) return b.dil.deltaMin - a.dil.deltaMin;
+          return a.originalIdx - b.originalIdx;
+        }
+        if (durationSortDirection === 'asc') {
+          const aHasDur = a.dil.deltaMin >= 0;
+          const bHasDur = b.dil.deltaMin >= 0;
+          if (aHasDur && !bHasDur) return -1;
+          if (!aHasDur && bHasDur) return 1;
+          if (aHasDur && bHasDur && a.dil.deltaMin !== b.dil.deltaMin) {
+            return a.dil.deltaMin - b.dil.deltaMin;
+          }
+          return a.originalIdx - b.originalIdx;
+        }
+        // 'default'
         if (a.dil.isAlert && !b.dil.isAlert) return -1;
         if (!a.dil.isAlert && b.dil.isAlert) return 1;
         if (a.dil.isAlert && b.dil.isAlert) {
