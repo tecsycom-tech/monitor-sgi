@@ -726,7 +726,7 @@
     let bitacoraCanceladosList = [];
     let fullSavedRecordsList = [];
     let activeActionRecord = null;
-    let durationSortDirection = 'default'; // 'default' | 'desc' | 'asc'
+    let durationSortDirection = 'default'; // 'default' (asc con duración primero) | 'asc' | 'desc'
 
     const EXPECTED_HEADERS = [
       'Nº', 'Cod Seguimiento Cliente', 'Número Documento', 'Estado', 'Cuadrilla',
@@ -1579,9 +1579,7 @@
 
       const sortIcon = durationSortDirection === 'desc'
         ? '<i data-lucide="arrow-down-wide-narrow" class="w-3.5 h-3.5 text-brand-600 inline"></i>'
-        : durationSortDirection === 'asc'
-          ? '<i data-lucide="arrow-up-narrow-wide" class="w-3.5 h-3.5 text-brand-600 inline"></i>'
-          : '<i data-lucide="chevrons-up-down" class="w-3.5 h-3.5 text-brand-500/80 inline"></i>';
+        : '<i data-lucide="arrow-up-narrow-wide" class="w-3.5 h-3.5 text-brand-600 inline"></i>';
 
       masterHead.innerHTML = actionHeaderHtml + EXPECTED_HEADERS.map((header, idx) => {
         const displayLabel = DISPLAY_HEADER_ALIASES[header] || header;
@@ -1593,7 +1591,7 @@
           return `
             <th class="py-3.5 px-3.5 whitespace-nowrap text-slate-800">${escapeHtml(displayLabel)}</th>
             <th class="py-3.5 px-3.5 whitespace-nowrap text-brand-600 select-none">
-              <button type="button" onclick="toggleDurationSort()" class="inline-flex items-center gap-1 font-bold text-brand-600 hover:text-brand-700 transition cursor-pointer" title="Ordenar por Duración (clic para alternar: Mayor a menor / Menor a mayor / Predeterminado)">
+              <button type="button" onclick="toggleDurationSort()" class="inline-flex items-center gap-1 font-bold text-brand-600 hover:text-brand-700 transition cursor-pointer" title="Registros con Duración ordenados ascendente por defecto (clic para alternar Descendente / Ascendente)">
                 <span>Duración</span>
                 ${sortIcon}
               </button>
@@ -1701,6 +1699,7 @@
           texto: '—',
           nivel: 'inactivo',
           deltaMin: -1,
+          hasValue: false,
           isAlert: false,
           badgeCls: 'bg-slate-50 text-slate-400 border-slate-200/80'
         };
@@ -1719,6 +1718,7 @@
           texto: 'Sin hora',
           nivel: 'normal',
           deltaMin: 0,
+          hasValue: true,
           isAlert: false,
           badgeCls: 'bg-slate-100 text-slate-500 border-slate-200'
         };
@@ -1734,6 +1734,7 @@
           texto: `🚨 ALERTA • ${transcurridoTexto}`,
           nivel: 'rojo',
           deltaMin,
+          hasValue: true,
           isAlert: true,
           badgeCls: 'bg-gradient-to-r from-rose-600 to-red-600 text-white border-rose-700 font-extrabold shadow-sm shadow-rose-500/30 alert-rojo'
         };
@@ -1742,6 +1743,7 @@
           texto: `⚠️ ${transcurridoTexto}`,
           nivel: 'amarillo',
           deltaMin,
+          hasValue: true,
           isAlert: false,
           badgeCls: 'bg-amber-100/90 text-amber-900 border-amber-400 font-bold shadow-2xs'
         };
@@ -1750,6 +1752,7 @@
           texto: `⏱️ ${transcurridoTexto}`,
           nivel: 'normal',
           deltaMin,
+          hasValue: true,
           isAlert: false,
           badgeCls: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold'
         };
@@ -2671,26 +2674,20 @@
       }));
 
       enriched.sort((a, b) => {
-        if (durationSortDirection === 'desc') {
-          if (a.dil.deltaMin !== b.dil.deltaMin) return b.dil.deltaMin - a.dil.deltaMin;
-          return a.originalIdx - b.originalIdx;
-        }
-        if (durationSortDirection === 'asc') {
-          const aHasDur = a.dil.deltaMin >= 0;
-          const bHasDur = b.dil.deltaMin >= 0;
-          if (aHasDur && !bHasDur) return -1;
-          if (!aHasDur && bHasDur) return 1;
-          if (aHasDur && bHasDur && a.dil.deltaMin !== b.dil.deltaMin) {
-            return a.dil.deltaMin - b.dil.deltaMin;
+        const aHasDur = a.dil.hasValue && a.dil.deltaMin >= 0;
+        const bHasDur = b.dil.hasValue && b.dil.deltaMin >= 0;
+
+        if (aHasDur && !bHasDur) return -1;
+        if (!aHasDur && bHasDur) return 1;
+
+        if (aHasDur && bHasDur) {
+          if (durationSortDirection === 'desc') {
+            if (a.dil.deltaMin !== b.dil.deltaMin) return b.dil.deltaMin - a.dil.deltaMin;
+          } else {
+            if (a.dil.deltaMin !== b.dil.deltaMin) return a.dil.deltaMin - b.dil.deltaMin;
           }
-          return a.originalIdx - b.originalIdx;
         }
-        // 'default'
-        if (a.dil.isAlert && !b.dil.isAlert) return -1;
-        if (!a.dil.isAlert && b.dil.isAlert) return 1;
-        if (a.dil.isAlert && b.dil.isAlert) {
-          return b.dil.deltaMin - a.dil.deltaMin;
-        }
+
         return a.originalIdx - b.originalIdx;
       });
 
