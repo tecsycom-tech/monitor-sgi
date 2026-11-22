@@ -357,7 +357,7 @@
           <button
             type="button"
             onclick="copyNewOrderNumbers()"
-            class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 bg-slate-100 hover:bg-brand-50 px-3 py-1.5 rounded-lg transition cursor-pointer"
+            class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-brand-600 bg-slate-100 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition cursor-pointer"
           >
             <i data-lucide="copy" class="w-3.5 h-3.5"></i>
             Copiar lista de Nº nuevos
@@ -557,8 +557,6 @@
             <option value="CANCELADO">CANCELADO</option>
             <option value="AUSENTE">AUSENTE</option>
             <option value="REPROGRAMA">REPROGRAMA</option>
-            <option value="EN CAMINO">EN CAMINO</option>
-            <option value="EN PROCESO">EN PROCESO</option>
             <option value="ZONA PELIGROSA">ZONA PELIGROSA</option>
             <option value="PLANTA">PLANTA</option>
             <option value="DUPLICADO">DUPLICADO</option>
@@ -599,12 +597,9 @@
               class="w-full px-3 py-2 rounded-xl border border-brand-200 bg-white text-sm font-bold text-slate-800 uppercase focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500"
             >
               <option value="">SELECCIONAR TRAMO...</option>
-              <option value="AM (08:00 - 13:00)">AM (08:00 - 13:00)</option>
-              <option value="PM1 (13:00 - 16:00)">PM1 (13:00 - 16:00)</option>
-              <option value="PM2 (16:00 - 19:00)">PM2 (16:00 - 19:00)</option>
-              <option value="MAÑANA">MAÑANA</option>
-              <option value="TARDE">TARDE</option>
-              <option value="TODO EL DÍA">TODO EL DÍA</option>
+              <option value="08AM-12PM">08AM-12PM</option>
+              <option value="12PM-16PM">12PM-16PM</option>
+              <option value="16PM-20PM">16PM-20PM</option>
             </select>
           </div>
         </div>
@@ -623,8 +618,8 @@
         </div>
 
         <div class="pt-2 flex items-center justify-between gap-3 border-t border-slate-200">
-          <span id="actTargetSheetBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800">
-            Hoja destino: REPROGRAMA / CANCELADOS + REGISTROS_COMPLETOS
+          <span id="actTargetSheetBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800">
+            Solo persistencia local (no guarda en Google Sheets)
           </span>
           <div class="flex items-center gap-2">
             <button type="button" onclick="closeActionStatusModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer">
@@ -827,6 +822,8 @@
           delete rec._savedEstadoToday;
           delete rec._savedEstadoDate;
           delete rec._savedEstadoMeta;
+          delete rec._virtualObservaciones;
+          delete rec._virtualUpdatedAt;
           changed = true;
         }
       });
@@ -1130,18 +1127,21 @@
 
       const dil = calculateDilacion(rec);
 
-      const extraSavedInfo = (rec['ESTADO_GUARDADO'] || rec['FECHA_HORA_GUARDADO'] || rec['OBSERVACIONES'] || rec['FECHA_REPROGRAMA'] || rec['TRAMO'])
+      const virtualObs = rec._virtualObservaciones || '';
+      const virtualTime = rec._virtualUpdatedAt || '';
+
+      const extraSavedInfo = (rec['ESTADO_GUARDADO'] || rec['FECHA_HORA_GUARDADO'] || rec['OBSERVACIONES'] || rec['FECHA_REPROGRAMA'] || rec['TRAMO'] || virtualObs)
         ? `
           <div class="bg-brand-50/70 rounded-xl p-4 border border-brand-200 space-y-2">
             <h4 class="text-xs font-bold uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
-              <i data-lucide="bookmark-check" class="w-4 h-4"></i> Registro Guardado en Google Sheets
+              <i data-lucide="bookmark-check" class="w-4 h-4"></i> ${virtualObs && !rec['FECHA_HORA_GUARDADO'] ? 'Registro Virtual Persistente (Local)' : 'Registro Guardado en Google Sheets'}
             </h4>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
               ${rec['ESTADO_GUARDADO'] ? `<div><span class="text-slate-500 block">Estado Guardado</span><strong class="text-slate-900">${escapeHtml(rec['ESTADO_GUARDADO'])}</strong></div>` : ''}
-              ${rec['FECHA_HORA_GUARDADO'] ? `<div><span class="text-slate-500 block">Fecha y Hora Guardado</span><span class="font-mono text-slate-800">${escapeHtml(rec['FECHA_HORA_GUARDADO'])}</span></div>` : ''}
+              ${rec['FECHA_HORA_GUARDADO'] ? `<div><span class="text-slate-500 block">Fecha y Hora Guardado</span><span class="font-mono text-slate-800">${escapeHtml(rec['FECHA_HORA_GUARDADO'])}</span></div>` : (virtualTime ? `<div><span class="text-slate-500 block">Actualizado (Local)</span><span class="font-mono text-slate-800">${escapeHtml(virtualTime)}</span></div>` : '')}
               ${rec['FECHA_REPROGRAMA'] ? `<div><span class="text-slate-500 block">Fecha Reprograma</span><strong class="text-slate-900">${escapeHtml(rec['FECHA_REPROGRAMA'])}</strong></div>` : ''}
               ${rec['TRAMO'] ? `<div><span class="text-slate-500 block">Tramo</span><strong class="text-slate-900">${escapeHtml(rec['TRAMO'])}</strong></div>` : ''}
-              ${rec['OBSERVACIONES'] ? `<div class="sm:col-span-2"><span class="text-slate-500 block">Observaciones</span><strong class="text-slate-900">${escapeHtml(rec['OBSERVACIONES'])}</strong></div>` : ''}
+              ${(rec['OBSERVACIONES'] || virtualObs) ? `<div class="sm:col-span-2"><span class="text-slate-500 block">Observaciones</span><strong class="text-slate-900">${escapeHtml(rec['OBSERVACIONES'] || virtualObs)}</strong></div>` : ''}
             </div>
           </div>
         `
@@ -1332,7 +1332,10 @@
     }
 
     // =========================================================================
-    // MODAL DE ACCIÓN (CAMBIAR ESTADO Y GUARDAR EN REPROGRAMA/CANCELADOS + REGISTROS_COMPLETOS ÚNICO)
+    // MODAL DE ACCIÓN:
+    // - COORDINADO: solo persistencia virtual local (NO guarda en Google Sheets)
+    // - REPROGRAMA: guarda en REPROGRAMA + REGISTROS_COMPLETOS (único)
+    // - DEMÁS ESTADOS: guarda en CANCELADOS + REGISTROS_COMPLETOS (único)
     // =========================================================================
     function openActionStatusModal(orderNumber) {
       const rec = masterRecords.find(r => String(r['Nº']) === String(orderNumber));
@@ -1356,7 +1359,7 @@
       document.getElementById('actCustomEstadoInput').value = '';
       document.getElementById('actFechaReprograma').value = '';
       document.getElementById('actTramoSelect').value = '';
-      document.getElementById('actObservaciones').value = '';
+      document.getElementById('actObservaciones').value = rec._virtualObservaciones || '';
 
       handleActionEstadoChange();
 
@@ -1375,6 +1378,7 @@
 
     function handleActionEstadoChange() {
       const selected = document.getElementById('actEstadoSelect').value;
+      const isCoordinado = selected === 'COORDINADO';
       const isReprograma = selected === 'REPROGRAMA';
       const isOtro = selected === 'OTRO ESTADO';
 
@@ -1390,22 +1394,21 @@
         reprogFields.classList.add('grid');
         fechaInput.required = true;
         tramoSelect.required = true;
+        targetBadge.textContent = 'Guarda en REPROGRAMA + REGISTROS_COMPLETOS (único)';
+        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800';
       } else {
         reprogFields.classList.add('hidden');
         reprogFields.classList.remove('grid');
         fechaInput.required = false;
         tramoSelect.required = false;
-      }
 
-      if (selected === 'REPROGRAMA') {
-        targetBadge.textContent = 'Guarda en REPROGRAMA + REGISTROS_COMPLETOS (único)';
-        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-brand-100 text-brand-800';
-      } else if (selected === 'CANCELADO') {
-        targetBadge.textContent = 'Guarda en CANCELADOS + REGISTROS_COMPLETOS (único)';
-        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800';
-      } else {
-        targetBadge.textContent = 'Guarda en hoja correspondiente + REGISTROS_COMPLETOS (único)';
-        targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800';
+        if (isCoordinado) {
+          targetBadge.textContent = 'Solo persistencia virtual local (no guarda en Google Sheets)';
+          targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 text-slate-800';
+        } else {
+          targetBadge.textContent = 'Guarda en CANCELADOS + REGISTROS_COMPLETOS (único)';
+          targetBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-800';
+        }
       }
 
       if (isOtro) {
@@ -1444,14 +1447,30 @@
         return;
       }
 
-      const isReprograma = finalEstado === 'REPROGRAMA';
-      const isCancelado = finalEstado === 'CANCELADO';
-      const fechaReprogramaRaw = document.getElementById('actFechaReprograma').value;
-      const fechaReprogramaFormatted = isReprograma ? formatDateToDdMmYyyy(fechaReprogramaRaw) : '';
-      const tramoUpper = isReprograma ? document.getElementById('actTramoSelect').value.toUpperCase().trim() : '';
       const observacionesUpper = document.getElementById('actObservaciones').value.toUpperCase().trim();
       const fechaHoraGuardado = formatPeruDateTimeNow();
       const fechaGuardadoDia = getTodayDdMmYyyy();
+
+      // COORDINADO: solo persistencia virtual en localStorage, sin guardar en Google Sheets
+      if (finalEstado === 'COORDINADO') {
+        activeActionRecord['Estado'] = 'COORDINADO';
+        activeActionRecord._savedEstadoToday = 'COORDINADO';
+        activeActionRecord._savedEstadoDate = fechaGuardadoDia;
+        activeActionRecord._virtualObservaciones = observacionesUpper;
+        activeActionRecord._virtualUpdatedAt = fechaHoraGuardado;
+        activeActionRecord._updatedAt = fechaHoraGuardado;
+        saveToStorage();
+        closeActionStatusModal();
+        refreshAllUI();
+        showToast('Estado COORDINADO guardado virtualmente con persistencia local (no se envió a Google Sheets).', 'info');
+        return;
+      }
+
+      const isReprograma = finalEstado === 'REPROGRAMA';
+      const targetStatusSheet = isReprograma ? 'REPROGRAMA' : 'CANCELADOS';
+      const fechaReprogramaRaw = document.getElementById('actFechaReprograma').value;
+      const fechaReprogramaFormatted = isReprograma ? formatDateToDdMmYyyy(fechaReprogramaRaw) : '';
+      const tramoUpper = isReprograma ? document.getElementById('actTramoSelect').value.toUpperCase().trim() : '';
 
       const ordenStr = String(activeActionRecord['Nº'] || '').trim();
       const codigoStr = String(activeActionRecord['Cod Seguimiento Cliente'] || '').trim();
@@ -1476,8 +1495,6 @@
           await syncBitacoraFromGoogleSheet(false);
         }
 
-        // Solo para REGISTROS_COMPLETOS: evita duplicados con los mismos datos,
-        // pero SÍ permite guardar si "Fecha Solicitud" es diferente.
         const skipFullDuplicate = isDuplicateInSavedFullExceptFechaSolicitud(fullRecordPayload);
 
         const payload = {
@@ -1485,6 +1502,7 @@
           codigo: codigoStr,
           dni: dniStr,
           estado: finalEstado,
+          targetSheet: targetStatusSheet,
           fechaReprograma: fechaReprogramaFormatted,
           tramo: tramoUpper,
           observaciones: observacionesUpper,
@@ -1535,7 +1553,7 @@
             'OBSERVACIONES': observacionesUpper,
             'FECHA Y HORA GUARDADO': fechaHoraGuardado
           });
-        } else if (isCancelado) {
+        } else {
           bitacoraCanceladosList.push({
             'ORDEN': ordenStr,
             'CODIGO': codigoStr,
@@ -1550,9 +1568,9 @@
         refreshAllUI();
 
         if (skipFullDuplicate) {
-          showToast(`Guardado en hoja de estado (${finalEstado}). Omitido en REGISTROS_COMPLETOS por tener los mismos datos y misma Fecha Solicitud.`, 'info');
+          showToast(`Guardado en ${targetStatusSheet} (${finalEstado}). Omitido en REGISTROS_COMPLETOS por tener los mismos datos y misma Fecha Solicitud.`, 'info');
         } else {
-          showToast(`¡Guardado! Estado ${finalEstado} registrado en su hoja correspondiente y en REGISTROS_COMPLETOS.`, 'success');
+          showToast(`¡Guardado! Estado ${finalEstado} registrado en ${targetStatusSheet} y en REGISTROS_COMPLETOS.`, 'success');
         }
       } catch (err) {
         console.error('Error guardando en Google Sheets:', err);
@@ -2305,6 +2323,8 @@
             delete existingRec._savedEstadoToday;
             delete existingRec._savedEstadoDate;
             delete existingRec._savedEstadoMeta;
+            delete existingRec._virtualObservaciones;
+            delete existingRec._virtualUpdatedAt;
           }
 
           const prevEstado = (existingRec['Estado'] || '').trim();
@@ -2768,13 +2788,10 @@
           }
 
           if (header === 'Estado') {
-            const todayTag = isSavedToday
-              ? `<span class="block text-[10px] font-bold text-brand-600 mt-1" title="Guardado hoy ${escapeHtml(todayStr)}">HOY: ${escapeHtml(todayStr)}</span>`
-              : '';
             const statusChangeHint = !isSavedToday && rec._statusUpdatedAt && rec._prevEstado
-              ? `<span class="block text-[10px] font-medium text-slate-500 mt-1" title="Actualizado a las ${escapeHtml(rec._statusUpdatedAt)}">Antes: ${escapeHtml(rec._prevEstado.toUpperCase())}</span>`
+              ? `<span class="block text-[10px] font-medium text-slate-500 mt-0.5" title="Actualizado a las ${escapeHtml(rec._statusUpdatedAt)}">Antes: ${escapeHtml(rec._prevEstado.toUpperCase())}</span>`
               : '';
-            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}${todayTag}${statusChangeHint}</td><td class="py-3 px-3.5 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg text-[11px] border ${dil.badgeCls} inline-flex items-center gap-1 font-mono whitespace-nowrap" title="Indicador visual basado en Fecha Estado (${escapeHtml(rec['Fecha Estado'] || '-')})">${dil.texto}</span></td>`;
+            return `<td class="py-3 px-3.5 whitespace-nowrap">${renderStatusBadge(val)}${statusChangeHint}</td><td class="py-3 px-3.5 whitespace-nowrap"><span class="px-2.5 py-1 rounded-lg text-[11px] border ${dil.badgeCls} inline-flex items-center gap-1 font-mono whitespace-nowrap" title="Indicador visual basado en Fecha Estado (${escapeHtml(rec['Fecha Estado'] || '-')})">${dil.texto}</span></td>`;
           }
 
           if (header === 'Prioridad') {
@@ -2829,8 +2846,8 @@
 
       if (upper === 'COORDINADO') {
         return `
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase bg-brand-50 text-brand-700 border border-brand-300 shadow-2xs">
-            <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+          <span style="background-color: #5DFF00; border-color: #36B300;" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase text-black border shadow-xs ring-1 ring-black/15">
+            <i data-lucide="clock" class="w-3.5 h-3.5 text-black shrink-0 stroke-[2.5]"></i>
             ${escapeHtml(upper)}
           </span>
         `;
@@ -3042,9 +3059,9 @@
             month = parseInt(m[1], 10);
             day = parseInt(m[2], 10);
             year = parseInt(m[3], 10);
-            hour = parseInt(m[4], 10);
-            minute = parseInt(m[5], 10);
-            second = parseInt(m[6], 10);
+            hour = m[4] ? parseInt(m[4], 10) : 0;
+            minute = m[5] ? parseInt(m[5], 10) : 0;
+            second = m[6] ? parseInt(m[6], 10) : 0;
             const ampm = m[7].toUpperCase();
             if (ampm === 'PM' && hour < 12) hour += 12;
             if (ampm === 'AM' && hour === 12) hour = 0;
